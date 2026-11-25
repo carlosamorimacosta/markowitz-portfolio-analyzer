@@ -1,90 +1,118 @@
+"""Markowitz Portfolio Analytics — Dash application for Render."""
 import os
-import dash
-from dash import dcc, html, Input, Output, State
-import dash_bootstrap_components as dbc
-
-import pandas as pd
+import re
+import io
+import base64
+from datetime import date, timedelta
 import numpy as np
+import pandas as pd
+import requests
 import yfinance as yf
 import plotly.graph_objects as go
-
+import plotly.io as pio
 from scipy.optimize import minimize
+from dash import Dash, dcc, html, Input, Output, State, no_update
+import dash_bootstrap_components as dbc
 
-app = dash.Dash(
-    __name__,
-    external_stylesheets=[dbc.themes.BOOTSTRAP],
-    suppress_callback_exceptions=True,
-    title="Markowitz | Portfolio Analytics"
-)
-
+app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP],
+           title="Markowitz | Portfolio Analytics")
 server = app.server
 
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@server.route('/health')
+def health():
+    return 'OK', 200
 
-:root {
-    --navy: #10283F;
-    --green: #28A879;
-    --background: #F3F5F7;
-    --border: #E2E8EE;
-}
+NAVY = "#10283F"
+GREEN = "#16836B"
+WHITE = "#FFFFFF"
+BACKGROUND = "#F4F6F8"
+BORDER = "#E1E6EC"
+GRAY = "#64748B"
+RED = "#B54747"
 
-html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
-}
+COLOR_PALETTE = [
+    "#10283F",
+    "#16836B",
+    "#497B98",
+    "#86B4A9",
+    "#8295A8",
+    "#B78127",
+    "#B54747",
+    "#CED9E2"
+]
 
-.stApp {
-    background-color: var(--background);
-}
+institutional_template = go.layout.Template(
+    layout=go.Layout(
+        font=dict(
+            family="Inter, Arial, sans-serif",
+            size=12,
+            color=NAVY
+        ),
 
-.block-container {
-    max-width: 1500px;
-    padding-top: 1.5rem;
-}
+        paper_bgcolor=WHITE,
+        plot_bgcolor=WHITE,
 
-[data-testid="stSidebar"] {
-    background-color: white;
-    border-right: 1px solid var(--border);
-}
+        colorway=COLOR_PALETTE,
 
-[data-testid="stMetric"] {
-    background: white;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 16px;
-}
+        title=dict(
+            font=dict(
+                size=16,
+                color=NAVY
+            ),
+            x=0.02
+        ),
 
-[data-testid="stMetricValue"] {
-    color: var(--navy);
-    font-weight: 700;
-}
+        xaxis=dict(
+            showgrid=True,
+            gridcolor=BORDER,
+            zeroline=False,
+            linecolor=BORDER,
+            tickfont=dict(
+                size=11,
+                color=GRAY
+            ),
+            automargin=True
+        ),
 
-h1, h2, h3 {
-    color: var(--navy) !important;
-}
+        yaxis=dict(
+            showgrid=True,
+            gridcolor=BORDER,
+            zeroline=False,
+            linecolor=BORDER,
+            tickfont=dict(
+                size=11,
+                color=GRAY
+            ),
+            automargin=True
+        ),
 
-.stButton > button {
-    background: var(--navy);
-    color: white;
-    border-radius: 7px;
-    border: none;
-    font-weight: 600;
-}
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0,
+            font=dict(size=10)
+        ),
 
-.stButton > button:hover {
-    background: #1D4964;
-    color: white;
-}
+        hoverlabel=dict(
+            bgcolor=NAVY,
+            font_color=WHITE,
+            font_family="Inter, Arial"
+        ),
 
-div[data-testid="stPlotlyChart"] {
-    background: white;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 8px;
-}
-</style>
-""", unsafe_allow_html=True)
+        margin=dict(
+            l=55,
+            r=25,
+            t=65,
+            b=50
+        )
+    )
+)
+
+pio.templates["institutional"] = institutional_template
+pio.templates.default = "institutional"
+
 
 # Lista inicial de tickers líquidos/conhecidos. Não é uma fotografia oficial e dinâmica
 # da carteira teórica do Ibovespa; o usuário pode editar, complementar ou importar CSV.
@@ -100,7 +128,6 @@ IBOV_STARTER = [
     "USIM5", "VALE3", "VAMO3", "VBBR3", "VIVA3", "VIVT3", "WEGE3"
 ]
 
-@st.cache_data(ttl=3600, show_spinner=False)
 def download_prices(tickers, start, end, frequency):
     symbols = [t.strip().upper() + ".SA" for t in tickers]
     interval = "1d"
@@ -124,11 +151,11 @@ def download_prices(tickers, start, end, frequency):
     prices.columns = [str(c).replace(".SA", "") for c in prices.columns]
     prices = prices.apply(pd.to_numeric, errors="coerce").dropna(how="all")
     if frequency == "Mensal":
-        prices = prices.resample("ME").last()
+        prices = prices.groupby(prices.index.to_period("M")).last()
+        prices.index = prices.index.to_timestamp("M")
     prices.index = pd.to_datetime(prices.index).tz_localize(None)
     return prices.dropna(axis=1, how="all")
 
-@st.cache_data(ttl=3600, show_spinner=False)
 def download_selic(start, end, frequency):
     # SGS 4390: Selic acumulada no mês (% a.m.); SGS 11: Selic diária (% a.d.).
     code = 4390 if frequency == "Mensal" else 11
@@ -187,7 +214,16 @@ def optimize_max_sharpe(mu, cov, rf, max_weight=1.0):
 def efficient_frontier(mu, cov, n_points=70, max_weight=1.0):
     w_mvp = optimize_mvp(mu, cov, max_weight)
     r_mvp, _ = portfolio_stats(w_mvp, mu, cov)
-    targets = np.linspace(r_mvp, float(np.max(mu)), n_points)
+    # Retorno máximo factível sob o limite individual.
+    remaining = 1.0
+    max_return = 0.0
+    for j in np.argsort(mu)[::-1]:
+        allocation = min(max_weight, remaining)
+        max_return += allocation * mu[j]
+        remaining -= allocation
+        if remaining <= 1e-10:
+            break
+    targets = np.linspace(r_mvp, max(r_mvp, max_return), n_points)
     rows = []
     n = len(mu)
     bounds = [(0.0, max_weight)] * n
@@ -209,227 +245,221 @@ def efficient_frontier(mu, cov, n_points=70, max_weight=1.0):
 def pct(x):
     return f"{x:.2%}"
 
-st.title("📈 Markowitz Portfolio Analyzer")
-st.caption("Otimização de carteiras de ações brasileiras • Markowitz mean-variance")
 
-with st.sidebar:
-    st.header("Configurações")
-    universe_mode = st.radio("Universo de ativos", ["Ibovespa + tickers personalizados", "Somente tickers personalizados"])
-    default_tickers = ", ".join(IBOV_STARTER[:20])
-    if universe_mode.startswith("Ibovespa"):
-        st.caption("Lista inicial editável de ações associadas ao universo do Ibovespa. Não representa composição oficial atualizada automaticamente.")
-        tickers_text = st.text_area("Tickers (separados por vírgula)", value=default_tickers, height=125)
-    else:
-        tickers_text = st.text_area("Tickers (separados por vírgula)", value="ITUB4, WEGE3, PETR4, VALE3", height=100)
-    uploaded = st.file_uploader("Ou importe CSV com coluna 'ticker' (opcional)", type=["csv"])
-    if uploaded is not None:
+# ---- Interface helpers ----
+def kpi_card(label, value, description="", positive=False):
+    return html.Div([
+        html.Div(label, className="kpi-label"),
+        html.Div(value, className="kpi-value" + (" positive" if positive else "")),
+        html.Div(description, className="kpi-description")
+    ], className="kpi-card")
+
+
+def panel(title, content, subtitle=None):
+    return html.Div([html.H3(title, className="chart-title"),
+                     html.Div(subtitle or "", className="chart-subtitle"), content],
+                    className="chart-card")
+
+
+def graph(fig):
+    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True}, responsive=True)
+
+
+def table(frame, formats=None):
+    display = frame.copy()
+    for col, fmt in (formats or {}).items():
+        display[col] = display[col].map(lambda x: fmt.format(x) if pd.notna(x) else "—")
+    return html.Div(dbc.Table.from_dataframe(display, striped=False, bordered=False,
+                    hover=True, index=False, className="financial-table"), className="table-container")
+
+
+def field(label, component):
+    return html.Div([html.Label(label, className="input-label"), component])
+
+
+sidebar = html.Aside([
+    html.Div([html.H2("MARKOWITZ", className="brand-title"),
+              html.Div("Portfolio Analytics", className="brand-subtitle")], className="sidebar-brand"),
+    html.Div("Workspace", className="sidebar-section-title"),
+    html.A("Parâmetros", href="#parameters", className="nav-link"),
+    html.A("Resultados", href="#results", className="nav-link"),
+    html.A("Metodologia", href="#methodology", className="nav-link"),
+    html.Div(["Quantitative Research", html.Br(), "Mean-variance optimization"], className="sidebar-footer")
+], className="sidebar")
+
+filters = html.Div([
+    html.H3("Parâmetros de investimento", className="section-title"),
+    field("Universo de ativos", dcc.RadioItems(id="universe", options=[
+        {"label": " Lista inicial editável", "value": "starter"},
+        {"label": " Personalizado", "value": "custom"}], value="custom", inline=True)),
+    html.P("A lista inicial não corresponde necessariamente à composição vigente do Ibovespa.", className="form-text"),
+    field("Tickers separados por vírgula", dcc.Textarea(id="tickers", value="ITUB4, WEGE3, PETR4, VALE3",
+            className="form-control", style={"width":"100%", "height":"90px"})),
+    dcc.Upload(id="upload", children=html.Div("Importar CSV com coluna ticker"), className="upload-area", multiple=False),
+    html.Div(id="upload-message"),
+    html.Div([
+        field("Período", dcc.DatePickerRange(id="period", start_date="2021-01-01", end_date=date.today(),
+              min_date_allowed=date(2000,1,1), max_date_allowed=date.today(), display_format="DD/MM/YYYY")),
+        field("Frequência", dcc.Dropdown(id="frequency", options=[{"label": x, "value": x} for x in ["Mensal", "Diária", "Ambas"]], value="Ambas", clearable=False)),
+        field("Peso máximo por ativo (%)", dcc.Slider(id="max-weight", min=5, max=100, step=5, value=100,
+                marks={5:"5",50:"50",100:"100"}, tooltip={"placement":"bottom"})),
+        field("Pontos da fronteira", dcc.Slider(id="points", min=30,max=120,step=10,value=70,
+                marks={30:"30",70:"70",120:"120"}))
+    ], className="filter-grid", style={"marginTop":"20px"}),
+    html.P("Estratégia long-only, integralmente investida, sem alavancagem.", className="form-text"),
+    html.Button("Calcular carteiras", id="run", n_clicks=0, className="primary-button")
+], id="parameters", className="filter-card")
+
+app.layout = html.Div([sidebar, html.Main([
+    html.Div([html.Span("Workspace / Portfolio Analytics", className="breadcrumb-text"),
+              html.Span("Brazilian Equities", className="breadcrumb-text")], className="topbar"),
+    html.Div([
+        html.Div([html.H1("Portfolio Analytics", className="page-title"),
+                  html.P("Construção de carteiras e análise quantitativa de risco", className="page-subtitle")], className="page-header"),
+        filters,
+        dcc.Loading(html.Div(id="results", children=dbc.Alert("Configure os parâmetros e clique em Calcular carteiras.", color="info")), type="circle", color=GREEN),
+        html.Div([html.H2("Metodologia"), html.P("Retornos simples de preços ajustados; médias históricas e covariância amostral anualizadas por 252 dias úteis ou 12 meses. Otimização SLSQP com pesos não negativos e soma igual a 1. A Selic histórica é utilizada como aproximação da taxa livre de risco; segue a convenção original: média mensal multiplicada por 12 e média diária capitalizada por 252. Os resultados são estimativas dentro da amostra, não previsões nem recomendações de investimento.")], id="methodology", className="methodology-card"),
+        html.Footer(["Fontes: Yahoo Finance / yfinance · Banco Central do Brasil / SGS", "Research tool"], className="dashboard-footer")
+    ], className="content-wrapper")
+], className="main-content")])
+
+
+@app.callback(Output("tickers", "value"), Output("upload-message", "children"),
+              Input("universe", "value"), Input("upload", "contents"), prevent_initial_call=True)
+def change_universe(mode, contents):
+    from dash import ctx
+    if ctx.triggered_id == "upload" and contents:
         try:
-            csv_df = pd.read_csv(uploaded)
-            col = next((c for c in csv_df.columns if c.lower() == "ticker"), csv_df.columns[0])
-            tickers_text = ", ".join(csv_df[col].dropna().astype(str).tolist())
+            raw = base64.b64decode(contents.split(",", 1)[1])
+            if len(raw) > 1_000_000:
+                raise ValueError("CSV limitado a 1 MB.")
+            frame = pd.read_csv(io.BytesIO(raw), sep=None, engine="python", encoding="utf-8-sig")
+            col = next((c for c in frame if str(c).strip().lower() == "ticker"), frame.columns[0])
+            return ", ".join(frame[col].dropna().astype(str)), dbc.Alert("CSV importado.", color="success")
         except Exception as exc:
-            st.error(f"Não foi possível ler o CSV: {exc}")
+            return no_update, dbc.Alert(f"Erro no CSV: {exc}", color="danger")
+    return (", ".join(IBOV_STARTER[:20]) if mode == "starter" else "ITUB4, WEGE3, PETR4, VALE3"), ""
 
-    freq_choice = st.radio("Frequência", ["Mensal", "Diária", "Ambas"], index=2)
-    start_date = st.date_input("Data inicial", value=date(2021, 1, 1), min_value=date(2000, 1, 1))
-    end_date = st.date_input("Data final", value=date.today(), min_value=date(2000, 1, 1))
-    frontier_points = st.slider("Pontos da fronteira", 30, 120, 70, 10)
-    max_weight = st.slider("Peso máximo por ativo", 5, 100, 100, 5) / 100
-    st.caption("Vendas a descoberto desabilitadas: pesos entre 0% e o limite definido.")
-    run = st.button("Calcular carteiras", type="primary", use_container_width=True)
 
-if "results" not in st.session_state:
-    st.session_state.results = None
-
-if run:
-    tickers = list(dict.fromkeys(re.findall(r"[A-Z0-9]{4}\d{1,2}", tickers_text.upper())))
-    if len(tickers) < 2:
-        st.error("Informe pelo menos dois tickers válidos (ex.: ITUB4, WEGE3).")
-    elif max_weight * len(tickers) < 1 - 1e-9:
-        st.error("O limite máximo por ativo é incompatível com a quantidade de ativos: a soma dos limites precisa permitir 100% de alocação.")
-    elif start_date >= end_date:
-        st.error("A data inicial precisa ser anterior à data final.")
+def analyze(tickers, start, end, freq, limit, points):
+    prices = download_prices(tuple(tickers), start, end, freq)
+    # Excluir mês incompleto; não preencher preços ausentes artificialmente.
+    if freq == "Mensal":
+        cutoff = min(pd.Timestamp(end), pd.Timestamp(date.today()))
+        prices = prices.loc[prices.index <= cutoff]
+        if cutoff.date() == date.today() and len(prices) and prices.index[-1].to_period('M') == cutoff.to_period('M'):
+            prices = prices.iloc[:-1]
+    returns = prices.pct_change(fill_method=None).replace([np.inf,-np.inf],np.nan).dropna(how="all")
+    returns = returns.dropna(axis=1, how="any")
+    if returns.shape[1] < 2 or len(returns) < 20:
+        raise ValueError("Amostra insuficiente: ao menos 20 retornos e dois ativos completos.")
+    assets = returns.columns.tolist()
+    if len(assets)*limit < 1-1e-9:
+        raise ValueError("Limite de peso incompatível com o universo efetivamente disponível.")
+    factor = annualization_factor(freq)
+    mu = returns.mean().to_numpy()*factor
+    cov = returns.cov().to_numpy()*factor
+    cov = (cov+cov.T)/2
+    if not np.isfinite(cov).all() or np.linalg.eigvalsh(cov).min() < -1e-8:
+        raise ValueError("Matriz de covariância inválida.")
+    selic = download_selic(start, end, freq).dropna()
+    if freq == "Mensal":
+        selic = selic[selic.index.to_period('M').isin(returns.index.to_period('M'))]
     else:
-        freqs = ["Mensal", "Diária"] if freq_choice == "Ambas" else [freq_choice]
-        all_results = {}
-        for freq in freqs:
-            with st.spinner(f"Baixando dados e otimizando carteiras ({freq.lower()})..."):
-                try:
-                    prices = download_prices(tuple(tickers), start_date, end_date, freq)
-                    if prices.shape[1] < 2:
-                        raise ValueError("Menos de duas ações retornaram dados. Verifique os tickers.")
-                    returns = prices.pct_change().replace([np.inf, -np.inf], np.nan).dropna(how="all")
-                    # Universo comum de observações: evita covariâncias com amostras distintas.
-                    returns = returns.dropna(axis=1, how="any")
-                    if returns.shape[1] < 2 or len(returns) < 20:
-                        raise ValueError("Amostra insuficiente após alinhar os dados. São necessárias ao menos 20 observações e dois ativos completos.")
-                    assets = returns.columns.tolist()
-                    factor = annualization_factor(freq)
-                    mu = returns.mean().values * factor
-                    cov = returns.cov().values * factor
-                    cov = (cov + cov.T) / 2
-                    if np.linalg.eigvalsh(cov).min() < -1e-8:
-                        raise ValueError("A matriz de covariância não é semidefinida positiva. Revise os dados.")
-                    selic = download_selic(start_date, end_date, freq)
-                    if freq == "Mensal":
-                        rf = float(selic.mean() * 12)  # mesma convenção da planilha
-                    else:
-                        rf = float((1 + selic.mean()) ** 252 - 1)
-                    w_mvp = optimize_mvp(mu, cov, max_weight)
-                    w_tan = optimize_max_sharpe(mu, cov, rf, max_weight)
-                    frontier = efficient_frontier(mu, cov, frontier_points, max_weight)
-                    asset_stats = pd.DataFrame({
-                        "Ativo": assets,
-                        "Retorno esperado": mu,
-                        "Volatilidade": np.sqrt(np.diag(cov))
-                    }).sort_values("Retorno esperado", ascending=False)
-                    all_results[freq] = {
-                        "prices": prices[assets], "returns": returns[assets],
-                        "assets": assets, "mu": mu, "cov": cov, "rf": rf,
-                        "selic": selic, "mvp": w_mvp, "tangent": w_tan,
-                        "frontier": frontier, "asset_stats": asset_stats,
-                        "factor": factor
-                    }
-                except Exception as exc:
-                    st.error(f"Erro na análise {freq}: {exc}")
-        st.session_state.results = all_results if all_results else None
+        selic = selic[selic.index.normalize().isin(returns.index.normalize())]
+    if selic.empty:
+        raise ValueError("Selic indisponível para as observações utilizadas.")
+    rf = float(selic.mean()*12 if freq == "Mensal" else (1+selic.mean())**252-1)
+    mvp = optimize_mvp(mu,cov,limit)
+    tan = optimize_max_sharpe(mu,cov,rf,limit)
+    frontier = efficient_frontier(mu,cov,points,limit)
+    return assets,prices[assets],returns,mu,cov,rf,mvp,tan,frontier
 
-results = st.session_state.results
-if not results:
-    st.info("Configure o universo, o período e clique em **Calcular carteiras** para iniciar.")
-    st.subheader("O que esta versão calcula")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Otimização", "Long-only", "Pesos não negativos")
-    c2.metric("Frequências", "Diária e mensal", "Anualização 252 / 12")
-    c3.metric("Taxa livre de risco", "Selic", "Banco Central do Brasil")
-    st.markdown("""
-    **Metodologia:** retornos simples sobre preços ajustados; média histórica para retorno esperado;
-    covariância amostral anualizada; otimização de variância mínima e máximo Sharpe.
-    """)
-    st.stop()
 
-tabs = st.tabs(list(results.keys()))
-for tab, (freq, data) in zip(tabs, results.items()):
-    with tab:
-        assets = data["assets"]
-        mu, cov, rf = data["mu"], data["cov"], data["rf"]
-        w_mvp, w_tan = data["mvp"], data["tangent"]
-        mvp_ret, mvp_vol = portfolio_stats(w_mvp, mu, cov)
-        tan_ret, tan_vol = portfolio_stats(w_tan, mu, cov)
-        sharpe = (tan_ret - rf) / tan_vol if tan_vol else np.nan
-
-        st.subheader(f"Resultados — frequência {freq.lower()}")
-        st.caption(f"{len(assets)} ativos • {len(data['returns'])} observações • anualização por {data['factor']}")
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Retorno esperado — máximo Sharpe", pct(tan_ret))
-        k2.metric("Volatilidade — máximo Sharpe", pct(tan_vol))
-        k3.metric("Sharpe máximo", f"{sharpe:.3f}")
-        k4.metric("Taxa livre de risco anual", pct(rf))
-
-        frontier = data["frontier"]
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=frontier["Volatilidade"], y=frontier["Retorno"],
-                                 mode="lines", name="Fronteira eficiente",
-                                 line=dict(width=3, color="#16A36A")))
-        asset_vol = np.sqrt(np.diag(cov))
-        fig.add_trace(go.Scatter(x=asset_vol, y=mu, mode="markers+text",
-                                 text=assets, textposition="top center",
-                                 name="Ativos", marker=dict(size=9, color="#3978C5")))
-        fig.add_trace(go.Scatter(x=[mvp_vol], y=[mvp_ret], mode="markers",
-                                 name="Mínima variância", marker=dict(size=13, symbol="diamond", color="#E09B32")))
-        fig.add_trace(go.Scatter(x=[tan_vol], y=[tan_ret], mode="markers",
-                                 name="Máximo Sharpe", marker=dict(size=14, symbol="star", color="#B34DCC")))
-        fig.update_layout(
-            template="plotly_white",
-            font=dict(
-                family="Inter",
-                color="#526575",
-                size=11
-            ),
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="#FFFFFF",
-            margin=dict(l=15, r=15, t=25, b=15)
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.markdown("#### Carteiras ótimas")
-        left, right = st.columns(2)
-        with left:
-            st.markdown("**Carteira de mínima variância (MVP)**")
-            st.metric("Retorno esperado", pct(mvp_ret))
-            st.metric("Volatilidade", pct(mvp_vol))
-            mvp_weights = pd.DataFrame({"Ativo": assets, "Peso": w_mvp}).sort_values("Peso", ascending=False)
-            st.dataframe(mvp_weights.style.format({"Peso": "{:.2%}"}), use_container_width=True, hide_index=True)
-        with right:
-            st.markdown("**Carteira de máximo Sharpe**")
-            st.metric("Retorno esperado", pct(tan_ret))
-            st.metric("Volatilidade", pct(tan_vol))
-            tan_weights = pd.DataFrame({"Ativo": assets, "Peso": w_tan}).sort_values("Peso", ascending=False)
-            st.dataframe(tan_weights.style.format({"Peso": "{:.2%}"}), use_container_width=True, hide_index=True)
-
-        pie = go.Figure(go.Pie(labels=assets, values=w_tan, hole=.45, sort=False))
-        pie.update_layout(title="Composição da carteira de máximo Sharpe", height=430)
-        st.plotly_chart(pie, use_container_width=True)
-
-        st.markdown("#### Indicadores dos ativos")
-        st.dataframe(data["asset_stats"].style.format({
-            "Retorno esperado": "{:.2%}", "Volatilidade": "{:.2%}"
-        }), use_container_width=True, hide_index=True)
-
-        st.markdown("#### Matrizes de risco")
-        corr = data["returns"].corr()
-        cov_df = pd.DataFrame(cov, index=assets, columns=assets)
-        c1, c2 = st.columns(2)
-        with c1:
-            st.caption("Matriz de correlação")
-            st.dataframe(corr.style.format("{:.2f}"), use_container_width=True)
-        with c2:
-            st.caption("Matriz de covariância anualizada")
-            st.dataframe(cov_df.style.format("{:.5f}"), use_container_width=True)
-
-        st.markdown("#### Histórico de preços ajustados")
-        price_fig = go.Figure()
+def render_results(tickers, start, end, freq, limit, points):
+    assets,prices,returns,mu,cov,rf,mvp,tan,frontier = analyze(tickers,start,end,freq,limit,points)
+    mr,mv = portfolio_stats(mvp,mu,cov)
+    tr,tv = portfolio_stats(tan,mu,cov)
+    sharpe = (tr-rf)/tv if tv>1e-12 else np.nan
+    av = np.sqrt(np.maximum(np.diag(cov),0))
+    fig = go.Figure([
+        go.Scatter(x=frontier.Volatilidade,y=frontier.Retorno,mode="lines",name="Fronteira eficiente",line=dict(color=NAVY,width=3)),
+        go.Scatter(x=av,y=mu,mode="markers+text",text=assets,textposition="top center",name="Ativos",marker=dict(color="#8295A8",size=8)),
+        go.Scatter(x=[mv],y=[mr],mode="markers",name="Mínima variância",marker=dict(color="#497B98",size=12,symbol="diamond")),
+        go.Scatter(x=[tv],y=[tr],mode="markers",name="Máximo Sharpe",marker=dict(color=GREEN,size=14,symbol="star"))])
+    fig.update_layout(xaxis_title="Volatilidade anualizada",yaxis_title="Retorno esperado anualizado",xaxis_tickformat=".1%",yaxis_tickformat=".1%",height=460)
+    pie = go.Figure(go.Pie(labels=assets,values=np.maximum(tan,0),hole=.60,sort=False))
+    pie.update_layout(height=460,showlegend=True)
+    holdings = pd.DataFrame({"Ativo":assets,"Peso MVP":mvp,"Peso máximo Sharpe":tan,"Retorno esperado":mu,"Volatilidade":av})
+    holdings = holdings.sort_values("Peso máximo Sharpe",ascending=False)
+    formats={c:"{:.2%}" for c in holdings.columns if c!="Ativo"}
+    corr=returns.corr()
+    cov_df=pd.DataFrame(cov,index=assets,columns=assets)
+    heat=go.Figure(go.Heatmap(z=corr.values,x=assets,y=assets,zmin=-1,zmax=1,colorscale=[[0,"#B54747"],[.5,"#FFFFFF"],[1,NAVY]],colorbar=dict(title="Correlação")))
+    heat.update_layout(height=max(350,min(850,25*len(assets)+120)))
+    price_fig=go.Figure()
+    for asset in assets:
+        series=prices[asset].dropna()
+        price_fig.add_trace(go.Scatter(x=series.index,y=series/series.iloc[0]*100,name=asset,mode="lines"))
+    price_fig.update_layout(yaxis_title="Índice (base 100)",height=420,hovermode="x unified")
+    excluded=sorted(set(tickers)-set(assets))
+    warnings=[dbc.Alert("Ativos excluídos por indisponibilidade ou dados incompletos: "+", ".join(excluded),color="warning")] if excluded else []
+    beta_panel=[]
+    # Benchmark separado do universo investível.
+    try:
+        bench=returns["BOVA11"] if "BOVA11" in returns else download_prices(("BOVA11",),start,end,freq)["BOVA11"].pct_change(fill_method=None)
+        betas=[]
         for asset in assets:
-            normalized = data["prices"][asset] / data["prices"][asset].dropna().iloc[0] * 100
-            price_fig.add_trace(go.Scatter(x=normalized.index, y=normalized, name=asset))
-        price_fig.update_layout(yaxis_title="Índice (base 100)", height=400, hovermode="x unified")
-        st.plotly_chart(price_fig, use_container_width=True)
+            pair=pd.concat([returns[asset],bench],axis=1).dropna()
+            variance=pair.iloc[:,1].var()
+            if len(pair)>=20 and variance>0:
+                betas.append({"Ativo":asset,"Beta":pair.iloc[:,0].cov(pair.iloc[:,1])/variance})
+        if betas:
+            beta_panel=[panel("Beta histórico vs. BOVA11",table(pd.DataFrame(betas),{"Beta":"{:.3f}"}))]
+    except Exception:
+        beta_panel=[dbc.Alert("Benchmark BOVA11 indisponível; os demais resultados foram preservados.",color="warning")]
+    csv=holdings.to_csv(index=False).encode("utf-8-sig")
+    href="data:text/csv;base64,"+base64.b64encode(csv).decode("ascii")
+    matrix=cov_df.rename_axis("Ativo").reset_index()
+    return html.Div([
+        html.P(f"{len(assets)} ativos · {len(returns)} observações · fator de anualização {annualization_factor(freq)}",className="page-subtitle"),
+        *warnings,
+        html.Div([kpi_card("Retorno esperado",pct(tr),"Máximo Sharpe",tr>0),kpi_card("Volatilidade",pct(tv),"Anualizada"),kpi_card("Sharpe",f"{sharpe:.3f}" if np.isfinite(sharpe) else "—","Máximo Sharpe"),kpi_card("Taxa livre de risco",pct(rf),"Selic histórica anualizada")],className="kpi-grid"),
+        html.Div([panel("Fronteira eficiente",graph(fig)),panel("Alocação ótima",graph(pie),"Máximo Sharpe")],className="chart-grid"),
+        html.Div([panel("Mínima variância",html.P(f"Retorno: {pct(mr)} · Volatilidade: {pct(mv)}")),panel("Máximo Sharpe",html.P(f"Retorno: {pct(tr)} · Volatilidade: {pct(tv)}"))],className="equal-grid"),
+        panel("Carteiras e indicadores dos ativos",table(holdings,formats)),
+        panel("Matriz de correlação",graph(heat)),
+        panel("Covariância anualizada",table(matrix,{c:"{:.5f}" for c in assets})),
+        panel("Histórico de preços ajustados",graph(price_fig)),
+        *beta_panel,
+        html.A("Baixar pesos e indicadores (CSV)",href=href,download=f"markowitz_{freq.lower()}.csv",className="secondary-button")
+    ])
 
-        # Beta histórico contra BOVA11, quando o benchmark foi incluído.
-        if "BOVA11" in assets:
-            benchmark = data["returns"]["BOVA11"]
-            betas = {}
-            for asset in assets:
-                if asset == "BOVA11":
-                    continue
-                aligned = pd.concat([data["returns"][asset], benchmark], axis=1).dropna()
-                betas[asset] = aligned.iloc[:, 0].cov(aligned.iloc[:, 1]) / aligned.iloc[:, 1].var()
-            if betas:
-                st.markdown("#### Beta em relação ao BOVA11")
-                st.dataframe(pd.DataFrame({"Ativo": list(betas.keys()), "Beta": list(betas.values())})
-                             .style.format({"Beta": "{:.3f}"}), hide_index=True, use_container_width=True)
 
-        export = pd.DataFrame({
-            "Ativo": assets,
-            "Peso_MVP": w_mvp,
-            "Peso_Maximo_Sharpe": w_tan,
-            "Retorno_Esperado_Anual": mu,
-            "Volatilidade_Anual": asset_vol
-        })
-        st.download_button(
-            f"Baixar pesos e indicadores ({freq.lower()})",
-            data=export.to_csv(index=False).encode("utf-8-sig"),
-            file_name=f"markowitz_{freq.lower()}.csv",
-            mime="text/csv"
-        )
+@app.callback(Output("results","children"),Input("run","n_clicks"),State("tickers","value"),State("period","start_date"),State("period","end_date"),State("frequency","value"),State("max-weight","value"),State("points","value"),prevent_initial_call=True)
+def run_optimization(n, tickers_text, start, end, frequency, max_weight, points):
+    try:
+        tickers=list(dict.fromkeys(re.findall(r"\b[A-Z]{4}\d{1,2}\b",(tickers_text or "").upper())))
+        if len(tickers)<2 or len(tickers)>60:
+            raise ValueError("Informe entre 2 e 60 tickers válidos.")
+        start,end=date.fromisoformat(start[:10]),date.fromisoformat(end[:10])
+        if start>=end or end>date.today():
+            raise ValueError("Período inválido.")
+        limit=max_weight/100
+        if limit*len(tickers)<1-1e-9:
+            raise ValueError("O limite de peso não permite 100% de alocação.")
+        freqs=["Mensal","Diária"] if frequency=="Ambas" else [frequency]
+        tabs=[]
+        for freq in freqs:
+            try:
+                children=render_results(tickers,start,end,freq,limit,points)
+            except Exception as exc:
+                children=dbc.Alert(f"Erro na análise {freq}: {exc}",color="danger")
+            tabs.append(dcc.Tab(label=freq,children=children))
+        return html.Div([html.H2("Resultados da otimização",className="section-title"),dcc.Tabs(children=tabs)])
+    except Exception as exc:
+        return dbc.Alert(str(exc),color="danger")
 
-st.divider()
-st.caption("Fontes: Yahoo Finance via yfinance (preços ajustados) e Banco Central do Brasil/SGS (Selic). "
-           "Resultados históricos são estimativas e não constituem recomendação de investimento.")
 
 if __name__ == "__main__":
-    app.run(
-        debug=False,
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 8050))
-    )
+    app.run(debug=False,host="0.0.0.0",port=int(os.environ.get("PORT",8050)))
