@@ -313,7 +313,7 @@ filters = html.Div([
     html.Div([
         field("Período", dcc.DatePickerRange(id="period", start_date="2021-01-01", end_date=date.today(),
               min_date_allowed=date(2000,1,1), max_date_allowed=date.today(), display_format="DD/MM/YYYY")),
-        field("Frequência", dcc.Dropdown(id="frequency", options=[{"label": x, "value": x} for x in ["Mensal", "Diária", "Ambas"]], value="Ambas", clearable=False)),
+        field("Frequência", dcc.Dropdown(id="frequency", options=[{"label": x, "value": x} for x in ["Mensal", "Diária", "Ambas"]], value="Mensal", clearable=False)),
         field("Peso máximo por ativo (%)", dcc.Slider(id="max-weight", min=5, max=100, step=5, value=100,
                 marks={5:"5",50:"50",100:"100"}, tooltip={"placement":"bottom"})),
         field("Pontos da fronteira", dcc.Slider(id="points", min=30,max=120,step=10,value=70,
@@ -672,7 +672,7 @@ def run_optimization(n, tickers_text, start, end, frequency, max_weight, points)
         limit=max_weight/100
         if limit*len(tickers)<1-1e-9:
             raise ValueError("O limite de peso não permite 100% de alocação.")
-        freqs=["Mensal","Diária"] if frequency=="Ambas" else [frequency]
+        freqs=["Mensal","Diária"] if frequency=="Mensal" else [frequency]
         tabs=[]
         for freq in freqs:
             try:
