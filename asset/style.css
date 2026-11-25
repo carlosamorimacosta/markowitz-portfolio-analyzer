@@ -1,0 +1,976 @@
+
+/* =========================================================
+   MARKOWITZ | PORTFOLIO ANALYTICS
+   Institutional Asset Management Design System
+   ========================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+
+/* =========================================================
+   1. DESIGN TOKENS
+   ========================================================= */
+
+:root {
+    --navy: #10283F;
+    --navy-dark: #0B1C2E;
+    --navy-light: #24465B;
+
+    --green: #16836B;
+    --green-dark: #106B58;
+    --green-light: #E7F3EF;
+
+    --white: #FFFFFF;
+    --background: #F4F6F8;
+    --border: #E1E6EC;
+
+    --text-primary: #10283F;
+    --text-secondary: #64748B;
+    --text-muted: #94A3B8;
+
+    --positive: #16836B;
+    --negative: #B54747;
+    --warning: #B78127;
+
+    --sidebar-width: 245px;
+    --header-height: 64px;
+
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+
+    --shadow: 0 2px 8px rgba(16, 40, 63, 0.04);
+}
+
+
+/* =========================================================
+   2. GLOBAL SETTINGS
+   ========================================================= */
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+
+    font-family: 'Inter', Arial, sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+
+    color: var(--text-primary);
+    background-color: var(--background);
+
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: var(--navy);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+}
+
+p {
+    line-height: 1.65;
+}
+
+a {
+    color: var(--green);
+    text-decoration: none;
+}
+
+a:hover {
+    color: var(--green-dark);
+}
+
+::selection {
+    background-color: var(--green-light);
+    color: var(--navy);
+}
+
+
+/* =========================================================
+   3. SIDEBAR
+   ========================================================= */
+
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+
+    width: var(--sidebar-width);
+
+    display: flex;
+    flex-direction: column;
+
+    background-color: var(--navy);
+    color: var(--white);
+
+    padding: 26px 16px;
+
+    z-index: 1000;
+    overflow-y: auto;
+}
+
+.sidebar-brand {
+    padding: 4px 10px 28px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+    margin-bottom: 24px;
+}
+
+.brand-title {
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    color: var(--white);
+    margin: 0;
+}
+
+.brand-subtitle {
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    color: #A5BACB;
+    margin-top: 6px;
+}
+
+.sidebar-section-title {
+    color: #91A6B8;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    margin: 20px 12px 10px;
+}
+
+.sidebar .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    padding: 12px 14px;
+    margin-bottom: 4px;
+
+    border-radius: var(--radius-sm);
+
+    font-size: 13px;
+    font-weight: 500;
+    color: #BDCAD6;
+
+    border-left: 3px solid transparent;
+
+    transition: background-color 0.15s ease,
+                color 0.15s ease;
+}
+
+.sidebar .nav-link:hover {
+    background-color: var(--navy-light);
+    color: var(--white);
+}
+
+.sidebar .nav-link.active {
+    background-color: var(--navy-light);
+    border-left-color: #40C49B;
+    color: var(--white);
+    font-weight: 600;
+}
+
+.sidebar-footer {
+    margin-top: auto;
+    padding: 20px 10px 0;
+
+    border-top: 1px solid rgba(255,255,255,0.12);
+
+    color: #A5BACB;
+    font-size: 10px;
+    line-height: 1.7;
+}
+
+
+/* =========================================================
+   4. MAIN CONTENT
+   ========================================================= */
+
+.main-content {
+    margin-left: var(--sidebar-width);
+    min-height: 100vh;
+}
+
+.content-wrapper {
+    padding: 28px 32px;
+    max-width: 1800px;
+    margin: 0 auto;
+}
+
+.topbar {
+    height: var(--header-height);
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    padding: 0 32px;
+
+    background-color: var(--white);
+    border-bottom: 1px solid var(--border);
+}
+
+.breadcrumb-text {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.page-header {
+    margin-bottom: 26px;
+}
+
+.page-title {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.9px;
+    margin-bottom: 6px;
+}
+
+.page-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.section-title {
+    font-size: 17px;
+    font-weight: 600;
+    margin-bottom: 16px;
+}
+
+.section-subtitle {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+
+/* =========================================================
+   5. STATUS INDICATORS
+   ========================================================= */
+
+.status-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--green);
+}
+
+.status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: var(--green);
+}
+
+.badge-positive {
+    background-color: var(--green-light);
+    color: var(--positive);
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+}
+
+.badge-negative {
+    background-color: #FBEDED;
+    color: var(--negative);
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+}
+
+
+/* =========================================================
+   6. KPI / METRIC CARDS
+   ========================================================= */
+
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px;
+    margin-bottom: 24px;
+}
+
+.kpi-card {
+    background-color: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+
+    padding: 22px;
+    min-height: 130px;
+
+    box-shadow: var(--shadow);
+    font-variant-numeric: tabular-nums;
+}
+
+.kpi-card.highlight {
+    border-top: 3px solid var(--green);
+}
+
+.kpi-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+
+.kpi-value {
+    font-size: clamp(24px, 2.2vw, 34px);
+    font-weight: 700;
+    letter-spacing: -1.2px;
+    line-height: 1.2;
+    color: var(--navy);
+}
+
+.kpi-value.positive {
+    color: var(--positive);
+}
+
+.kpi-value.negative {
+    color: var(--negative);
+}
+
+.kpi-description {
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-top: 8px;
+}
+
+.metric-positive {
+    color: var(--positive);
+    font-weight: 600;
+}
+
+.metric-negative {
+    color: var(--negative);
+    font-weight: 600;
+}
+
+
+/* =========================================================
+   7. GENERAL CARDS AND PANELS
+   ========================================================= */
+
+.card,
+.dashboard-card,
+.chart-card,
+.filter-card {
+    background-color: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow);
+    min-width: 0;
+}
+
+.dashboard-card,
+.chart-card,
+.filter-card {
+    padding: 22px;
+    margin-bottom: 20px;
+}
+
+.card-header {
+    background-color: var(--white);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 20px;
+}
+
+.card-body {
+    padding: 20px;
+}
+
+.card-title,
+.chart-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--navy);
+    margin-bottom: 5px;
+}
+
+.chart-subtitle {
+    color: var(--text-secondary);
+    font-size: 11px;
+    margin-bottom: 15px;
+}
+
+.chart-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 20px;
+}
+
+.equal-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+}
+
+
+/* =========================================================
+   8. INPUTS AND FILTERS
+   ========================================================= */
+
+.filter-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px;
+    align-items: start;
+}
+
+.form-label,
+.input-label {
+    display: block;
+
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.form-control,
+.form-select,
+input[type="text"],
+input[type="number"],
+input[type="date"],
+textarea {
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text-primary);
+
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+
+    min-height: 40px;
+    padding: 10px 12px;
+
+    background-color: var(--white);
+}
+
+.form-control:focus,
+.form-select:focus,
+input:focus,
+textarea:focus {
+    outline: none;
+    border-color: var(--green);
+    box-shadow: 0 0 0 3px rgba(22,131,107,0.09);
+}
+
+.form-text {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+
+/* =========================================================
+   9. DASH DROPDOWNS
+   ========================================================= */
+
+.Select-control {
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
+    min-height: 40px;
+    font-size: 13px;
+}
+
+.Select-menu-outer {
+    border-color: var(--border) !important;
+    box-shadow: var(--shadow);
+    z-index: 1050;
+}
+
+.Select-option {
+    padding: 10px 12px;
+}
+
+.Select-option.is-focused {
+    background-color: var(--green-light);
+    color: var(--navy);
+}
+
+.Select-option.is-selected {
+    background-color: var(--green-light);
+    color: var(--green-dark);
+}
+
+.Select--multi .Select-value {
+    color: var(--green-dark);
+    background-color: var(--green-light);
+    border: 1px solid #B9DCD0;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+}
+
+.Select--multi .Select-value-icon {
+    border-right-color: #B9DCD0;
+}
+
+
+/* =========================================================
+   10. BUTTONS
+   ========================================================= */
+
+button {
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.btn-primary,
+.btn-success,
+.primary-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+
+    background-color: var(--green);
+    border: 1px solid var(--green);
+    color: var(--white);
+
+    padding: 11px 20px;
+    border-radius: var(--radius-sm);
+
+    font-size: 13px;
+    font-weight: 600;
+
+    transition: background-color 0.15s ease,
+                border-color 0.15s ease;
+}
+
+.btn-primary:hover,
+.btn-success:hover,
+.primary-button:hover {
+    background-color: var(--green-dark);
+    border-color: var(--green-dark);
+    color: var(--white);
+}
+
+.btn-primary:focus,
+.primary-button:focus {
+    box-shadow: 0 0 0 3px rgba(22,131,107,0.15);
+}
+
+.secondary-button {
+    background-color: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+
+    padding: 10px 18px;
+
+    color: var(--navy);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.secondary-button:hover {
+    background-color: var(--background);
+    border-color: var(--text-muted);
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+
+/* =========================================================
+   11. TABS AND NAVIGATION
+   ========================================================= */
+
+.nav-tabs {
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+    gap: 20px;
+}
+
+.nav-tabs .nav-link {
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+
+    color: var(--text-secondary);
+    background-color: transparent;
+
+    font-size: 13px;
+    font-weight: 500;
+    padding: 12px 4px;
+}
+
+.nav-tabs .nav-link:hover {
+    color: var(--navy);
+}
+
+.nav-tabs .nav-link.active {
+    color: var(--green);
+    background-color: transparent;
+    border-bottom: 2px solid var(--green);
+    font-weight: 600;
+}
+
+
+/* =========================================================
+   12. FINANCIAL TABLES
+   ========================================================= */
+
+.table-container {
+    overflow-x: auto;
+    background-color: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.table,
+.financial-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 0;
+}
+
+.table thead th,
+.financial-table thead th {
+    background-color: var(--navy);
+    color: var(--white);
+
+    text-align: right;
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+
+    padding: 14px 16px;
+    white-space: nowrap;
+}
+
+.table tbody td,
+.financial-table tbody td {
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--border);
+    text-align: right;
+    vertical-align: middle;
+}
+
+.table th:first-child,
+.table td:first-child,
+.financial-table th:first-child,
+.financial-table td:first-child {
+    text-align: left;
+}
+
+.table tbody tr:hover,
+.financial-table tbody tr:hover {
+    background-color: #F0F5F8;
+}
+
+.table tbody tr:last-child td,
+.financial-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.table-total {
+    background-color: var(--green-light);
+    font-weight: 700;
+}
+
+
+/* =========================================================
+   13. PLOTLY GRAPHS
+   ========================================================= */
+
+.dash-graph {
+    width: 100%;
+    min-width: 0;
+}
+
+.js-plotly-plot {
+    border-radius: var(--radius-sm);
+}
+
+.modebar {
+    background-color: transparent !important;
+}
+
+.modebar-btn path {
+    fill: var(--text-muted) !important;
+}
+
+.modebar-btn:hover path {
+    fill: var(--navy) !important;
+}
+
+
+/* =========================================================
+   14. SLIDERS AND CHECKBOXES
+   ========================================================= */
+
+.rc-slider-track {
+    background-color: var(--green) !important;
+}
+
+.rc-slider-rail {
+    background-color: var(--border) !important;
+}
+
+.rc-slider-handle {
+    border: 2px solid var(--green) !important;
+    background-color: var(--white) !important;
+}
+
+.rc-slider-handle:hover,
+.rc-slider-handle:active {
+    box-shadow: 0 0 0 4px rgba(22,131,107,0.12);
+}
+
+.rc-slider-mark-text {
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
+.form-check-input:checked {
+    background-color: var(--green);
+    border-color: var(--green);
+}
+
+
+/* =========================================================
+   15. ALERTS AND MESSAGES
+   ========================================================= */
+
+.alert-success {
+    background-color: var(--green-light);
+    border-color: #B9DCD0;
+    color: var(--green-dark);
+}
+
+.alert-danger {
+    background-color: #FBEDED;
+    border-color: #EACACA;
+    color: var(--negative);
+}
+
+.alert-warning {
+    background-color: #FFF8E8;
+    border-color: #F0DDB0;
+    color: #92671E;
+}
+
+.alert-info {
+    background-color: #EAF1F7;
+    border-color: #CBDCE8;
+    color: var(--navy);
+}
+
+
+/* =========================================================
+   16. UPLOAD AREA
+   ========================================================= */
+
+.upload-area {
+    background-color: var(--background);
+    border: 1px dashed var(--text-muted);
+    border-radius: var(--radius-md);
+
+    padding: 25px;
+    text-align: center;
+
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.upload-area:hover {
+    background-color: var(--green-light);
+    border-color: var(--green);
+}
+
+
+/* =========================================================
+   17. METHODOLOGY
+   ========================================================= */
+
+.methodology-card {
+    background-color: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 28px;
+    margin-bottom: 20px;
+}
+
+.methodology-card h2 {
+    font-size: 20px;
+    margin-bottom: 16px;
+}
+
+.methodology-card h3 {
+    font-size: 15px;
+    margin-top: 24px;
+    margin-bottom: 10px;
+}
+
+.methodology-card p,
+.methodology-card li {
+    font-size: 13px;
+    line-height: 1.8;
+    color: #475569;
+}
+
+.formula-box {
+    background-color: var(--background);
+    border-left: 3px solid var(--green);
+    padding: 20px;
+    margin: 18px 0;
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+}
+
+
+/* =========================================================
+   18. FOOTER
+   ========================================================= */
+
+.dashboard-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+
+    border-top: 1px solid var(--border);
+    padding: 20px 0;
+    margin-top: 30px;
+
+    color: var(--text-muted);
+    font-size: 10px;
+}
+
+
+/* =========================================================
+   19. SCROLLBAR
+   ========================================================= */
+
+::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+}
+
+::-webkit-scrollbar-track {
+    background-color: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: #BBC7D3;
+    border-radius: 8px;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+    background-color: #395166;
+}
+
+
+/* =========================================================
+   20. RESPONSIVE DESIGN
+   ========================================================= */
+
+@media (max-width: 1200px) {
+
+    .kpi-grid,
+    .filter-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .chart-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .content-wrapper {
+        padding: 24px;
+    }
+
+}
+
+@media (max-width: 768px) {
+
+    .sidebar {
+        position: relative;
+        width: 100%;
+        padding: 18px;
+    }
+
+    .sidebar-brand {
+        padding-bottom: 15px;
+        margin-bottom: 12px;
+    }
+
+    .sidebar-footer {
+        display: none;
+    }
+
+    .main-content {
+        margin-left: 0;
+    }
+
+    .topbar {
+        padding: 0 16px;
+    }
+
+    .content-wrapper {
+        padding: 18px 14px;
+    }
+
+    .kpi-grid,
+    .filter-grid,
+    .equal-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .page-title {
+        font-size: 23px;
+    }
+
+    .kpi-card {
+        padding: 16px;
+        min-height: 110px;
+    }
+
+    .chart-card,
+    .dashboard-card,
+    .filter-card {
+        padding: 15px;
+    }
+
+}
+
+@media (max-width: 480px) {
+
+    .kpi-grid,
+    .filter-grid,
+    .equal-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .dashboard-footer {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+}
