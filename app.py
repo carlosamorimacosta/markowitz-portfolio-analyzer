@@ -323,232 +323,211 @@ filters = html.Div([
     html.Button("Calcular carteiras", id="run", n_clicks=0, className="primary-button")
 ], id="parameters", className="filter-card")
 
+
+# =========================================================
+# APPLICATION LAYOUT
+# =========================================================
+
 app.layout = html.Div(
     [
-        dcc.Location(id="url"),
+        # Sidebar institucional
+        sidebar,
 
-        # SIDEBAR
-        html.Div(
+        # Área principal
+        html.Main(
             [
-                html.Div(
-                    [
-                        html.H1("MARKOWITZ", className="brand-title"),
-                        html.Div("Portfolio Analytics", className="brand-subtitle"),
-                    ],
-                    className="sidebar-brand",
-                ),
-
-                html.Div("Workspace", className="sidebar-section-title"),
-                html.Div("Parâmetros", className="nav-link active"),
-                html.Div("Resultados", className="nav-link"),
-                html.Div("Metodologia", className="nav-link"),
-
-                html.Div(
-                    [
-                        html.Div("Quantitative Research"),
-                        html.Div("Mean-variance optimization"),
-                        html.Div("Brazilian Equities"),
-                    ],
-                    className="sidebar-footer",
-                ),
-            ],
-            className="sidebar",
-        ),
-
-        # MAIN
-        html.Div(
-            [
-                html.Div(
+                # Cabeçalho superior
+                html.Header(
                     [
                         html.Div(
+                            "Workspace / Portfolio Analytics",
+                            className="breadcrumb-text"
+                        ),
+
+                        html.Div(
                             [
-                                html.Div("Workspace / Portfolio Analytics", className="breadcrumb-text"),
-                                html.H1("Portfolio Analytics", className="page-title"),
+                                html.Span(className="status-dot"),
+                                html.Span("Brazilian Equities")
+                            ],
+                            className="status-indicator"
+                        )
+                    ],
+                    className="topbar"
+                ),
+
+                # Conteúdo
+                html.Div(
+                    [
+                        # Título da página
+                        html.Div(
+                            [
+                                html.H1(
+                                    "Portfolio Analytics",
+                                    className="page-title"
+                                ),
+
                                 html.P(
-                                    "Construção de carteiras e análise quantitativa de risco",
-                                    className="page-subtitle",
-                                ),
-                            ]
+                                    "Construção de carteiras e "
+                                    "análise quantitativa de risco",
+                                    className="page-subtitle"
+                                )
+                            ],
+                            className="page-header"
                         ),
+
+                        # Parâmetros de investimento
+                        filters,
+
+                        # Resultados dinâmicos
+                        dcc.Loading(
+                            id="loading-results",
+                            type="circle",
+                            color="#16836B",
+                            children=html.Div(
+                                id="results",
+                                children=[
+                                    html.Div(
+                                        [
+                                            html.H3(
+                                                "Portfolio Overview",
+                                                className="section-title"
+                                            ),
+
+                                            html.Div(
+                                                [
+                                                    kpi_card(
+                                                        "Retorno esperado",
+                                                        "—",
+                                                        "Retorno anualizado"
+                                                    ),
+
+                                                    kpi_card(
+                                                        "Volatilidade",
+                                                        "—",
+                                                        "Risco anualizado"
+                                                    ),
+
+                                                    kpi_card(
+                                                        "Índice de Sharpe",
+                                                        "—",
+                                                        "Retorno ajustado ao risco"
+                                                    ),
+
+                                                    kpi_card(
+                                                        "Taxa livre de risco",
+                                                        "—",
+                                                        "Selic histórica"
+                                                    )
+                                                ],
+                                                className="kpi-grid"
+                                            ),
+
+                                            dbc.Alert(
+                                                "Configure os parâmetros "
+                                                "de investimento e clique "
+                                                "em Calcular carteiras.",
+                                                color="info"
+                                            )
+                                        ]
+                                    )
+                                ]
+                            )
+                        ),
+
+                        # Metodologia
+                        html.Section(
+                            [
+                                html.H2(
+                                    "Metodologia",
+                                    className="section-title"
+                                ),
+
+                                html.P(
+                                    "O modelo utiliza a abordagem "
+                                    "de média-variância proposta "
+                                    "por Harry Markowitz (1952)."
+                                ),
+
+                                html.H3(
+                                    "Construção de carteiras"
+                                ),
+
+                                html.P(
+                                    "Os retornos esperados são "
+                                    "estimados pela média histórica "
+                                    "dos retornos simples. A matriz "
+                                    "de covariância amostral é "
+                                    "anualizada de acordo com a "
+                                    "frequência selecionada."
+                                ),
+
+                                html.H3(
+                                    "Otimização"
+                                ),
+
+                                html.P(
+                                    "As carteiras de mínima "
+                                    "variância e máximo Sharpe são "
+                                    "obtidas por otimização numérica "
+                                    "via SLSQP, considerando pesos "
+                                    "não negativos e investimento "
+                                    "integral do patrimônio."
+                                ),
+
+                                html.H3(
+                                    "Fontes de dados"
+                                ),
+
+                                html.P(
+                                    "Yahoo Finance: preços "
+                                    "históricos ajustados."
+                                ),
+
+                                html.P(
+                                    "Banco Central do Brasil "
+                                    "(SGS): taxa Selic histórica."
+                                ),
+
+                                html.H3(
+                                    "Limitações"
+                                ),
+
+                                html.P(
+                                    "Os resultados representam "
+                                    "estimativas históricas e são "
+                                    "sensíveis às hipóteses de "
+                                    "retorno esperado e covariância. "
+                                    "Não constituem recomendação "
+                                    "de investimento."
+                                )
+                            ],
+                            id="methodology",
+                            className="methodology-card"
+                        ),
+
+                        # Rodapé
+                        html.Footer(
+                            [
+                                html.Div(
+                                    "MARKOWITZ | Portfolio Analytics"
+                                ),
+
+                                html.Div(
+                                    "Yahoo Finance · Banco Central "
+                                    "do Brasil · Quantitative Research"
+                                )
+                            ],
+                            className="dashboard-footer"
+                        )
                     ],
-                    className="topbar",
-                ),
-
-                html.Div(
-                    [
-                        # KPI CARDS
-                        html.Div(
-                            [
-                                kpi_card("Expected Return", "--", "Annualized expected return", positive=True),
-                                kpi_card("Volatility", "--", "Annualized portfolio risk"),
-                                kpi_card("Sharpe Ratio", "--", "Risk-adjusted return"),
-                                kpi_card("Risk-Free Rate", "--", "Annualized Selic"),
-                            ],
-                            className="kpi-grid",
-                        ),
-
-                        # FILTER CARD
-                        html.Div(
-                            [
-                                html.H3("Parâmetros de investimento", className="section-title"),
-
-                                html.Div(
-                                    [
-                                        html.Div(
-                                            [
-                                                html.Label("Universo de ativos", className="form-label"),
-                                                dcc.RadioItems(
-                                                    id="universe-mode",
-                                                    options=[
-                                                        {"label": " Lista inicial editável", "value": "starter"},
-                                                        {"label": " Personalizado", "value": "custom"},
-                                                    ],
-                                                    value="custom",
-                                                    inline=True,
-                                                ),
-                                            ]
-                                        ),
-
-                                        html.Div(
-                                            [
-                                                html.Label("Tickers separados por vírgula", className="form-label"),
-                                                dcc.Textarea(
-                                                    id="tickers-input",
-                                                    value="ITUB4, WEGE3, PETR4, VALE3",
-                                                    style={"width": "100%", "height": 90},
-                                                ),
-                                            ]
-                                        ),
-
-                                        html.Div(
-                                            [
-                                                html.Label("Período", className="form-label"),
-                                                dcc.DatePickerRange(
-                                                    id="date-range",
-                                                    start_date="2021-01-01",
-                                                    end_date=date.today(),
-                                                    display_format="DD/MM/YYYY",
-                                                ),
-                                            ]
-                                        ),
-
-                                        html.Div(
-                                            [
-                                                html.Label("Frequência", className="form-label"),
-                                                dcc.Dropdown(
-                                                    id="freq-choice",
-                                                    options=[
-                                                        {"label": "Mensal", "value": "Mensal"},
-                                                        {"label": "Diária", "value": "Diária"},
-                                                        {"label": "Ambas", "value": "Ambas"},
-                                                    ],
-                                                    value="Mensal",
-                                                    clearable=False,
-                                                ),
-                                            ]
-                                        ),
-
-                                        html.Div(
-                                            [
-                                                html.Label("Peso máximo por ativo", className="form-label"),
-                                                dcc.Slider(
-                                                    id="max-weight",
-                                                    min=5,
-                                                    max=100,
-                                                    step=5,
-                                                    value=100,
-                                                    marks={i: f"{i}%" for i in [5, 25, 50, 75, 100]},
-                                                ),
-                                            ]
-                                        ),
-
-                                        html.Div(
-                                            [
-                                                html.Button(
-                                                    "Run Optimization",
-                                                    id="run-button",
-                                                    n_clicks=0,
-                                                    className="primary-button",
-                                                )
-                                            ],
-                                            style={"display": "flex", "alignItems": "end"},
-                                        ),
-                                    ],
-                                    className="filter-grid",
-                                ),
-                            ],
-                            className="filter-card",
-                        ),
-
-                        # CHARTS
-                        html.Div(
-                            [
-                                html.Div(
-                                    [
-                                        html.Div("Efficient Frontier", className="chart-title"),
-                                        dcc.Graph(id="frontier-chart", config={"displayModeBar": False}),
-                                    ],
-                                    className="chart-card",
-                                ),
-                                html.Div(
-                                    [
-                                        html.Div("Optimal Allocation", className="chart-title"),
-                                        dcc.Graph(id="allocation-chart", config={"displayModeBar": False}),
-                                    ],
-                                    className="chart-card",
-                                ),
-                            ],
-                            className="chart-grid",
-                        ),
-
-                        html.Div(
-                            [
-                                html.Div(
-                                    [
-                                        html.Div("Portfolio Weights", className="chart-title"),
-                                        html.Div(id="weights-table"),
-                                    ],
-                                    className="chart-card",
-                                ),
-                                html.Div(
-                                    [
-                                        html.Div("Asset Statistics", className="chart-title"),
-                                        html.Div(id="asset-stats-table"),
-                                    ],
-                                    className="chart-card",
-                                ),
-                            ],
-                            className="equal-grid",
-                        ),
-
-                        html.Div(
-                            [
-                                html.Div(
-                                    [
-                                        html.Div("Correlation Matrix", className="chart-title"),
-                                        dcc.Graph(id="corr-heatmap", config={"displayModeBar": False}),
-                                    ],
-                                    className="chart-card",
-                                ),
-                                html.Div(
-                                    [
-                                        html.Div("Normalized Price History", className="chart-title"),
-                                        dcc.Graph(id="price-history-chart", config={"displayModeBar": False}),
-                                    ],
-                                    className="chart-card",
-                                ),
-                            ],
-                            className="equal-grid",
-                        ),
-                    ],
-                    className="content-wrapper",
-                ),
+                    className="content-wrapper"
+                )
             ],
-            className="main-content",
-        ),
-    ]
+            className="main-content"
+        )
+    ],
+    className="app-container"
 )
-
 
 @app.callback(Output("tickers", "value"), Output("upload-message", "children"),
               Input("universe", "value"), Input("upload", "contents"), prevent_initial_call=True)
@@ -654,9 +633,28 @@ def render_results(tickers, start, end, freq, limit, points):
         html.Div([panel("Fronteira eficiente",graph(fig)),panel("Alocação ótima",graph(pie),"Máximo Sharpe")],className="chart-grid"),
         html.Div([panel("Mínima variância",html.P(f"Retorno: {pct(mr)} · Volatilidade: {pct(mv)}")),panel("Máximo Sharpe",html.P(f"Retorno: {pct(tr)} · Volatilidade: {pct(tv)}"))],className="equal-grid"),
         panel("Carteiras e indicadores dos ativos",table(holdings,formats)),
-        panel("Matriz de correlação",graph(heat)),
-        panel("Covariância anualizada",table(matrix,{c:"{:.5f}" for c in assets})),
-        panel("Histórico de preços ajustados",graph(price_fig)),
+        html.Div(
+            [
+                panel(
+                    "Matriz de correlação",
+                    graph(heat)
+                ),
+        
+                panel(
+                    "Histórico de preços ajustados",
+                    graph(price_fig)
+                )
+            ],
+            className="equal-grid"
+        ),
+        
+        panel(
+            "Covariância anualizada",
+            table(
+                matrix,
+                {c: "{:.5f}" for c in assets}
+            )
+        ),
         *beta_panel,
         html.A("Baixar pesos e indicadores (CSV)",href=href,download=f"markowitz_{freq.lower()}.csv",className="secondary-button")
     ])
