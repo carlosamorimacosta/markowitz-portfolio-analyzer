@@ -3,6 +3,7 @@ import os
 import re
 import io
 import base64
+from pathlib import Path
 from datetime import date, timedelta
 import numpy as np
 import pandas as pd
@@ -14,9 +15,21 @@ from scipy.optimize import minimize
 from dash import Dash, dcc, html, Input, Output, State, no_update
 import dash_bootstrap_components as dbc
 
-app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP],
-           title="Markowitz | Portfolio Analytics")
+
+BASE_DIR = Path(__file__).resolve().parent
+
+app = Dash(
+    __name__,
+    assets_folder=str(BASE_DIR / "assets"),
+    assets_url_path="assets",
+    include_assets_files=True,
+    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    suppress_callback_exceptions=True,
+    title="Markowitz | Portfolio Analytics"
+)
+
 server = app.server
+
 
 @server.route('/health')
 def health():
