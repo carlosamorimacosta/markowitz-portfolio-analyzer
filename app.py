@@ -332,9 +332,17 @@ for tab, (freq, data) in zip(tabs, results.items()):
                                  name="Mínima variância", marker=dict(size=13, symbol="diamond", color="#E09B32")))
         fig.add_trace(go.Scatter(x=[tan_vol], y=[tan_ret], mode="markers",
                                  name="Máximo Sharpe", marker=dict(size=14, symbol="star", color="#B34DCC")))
-        fig.update_layout(xaxis_title="Volatilidade anualizada", yaxis_title="Retorno esperado anualizado",
-                          yaxis_tickformat=".0%", xaxis_tickformat=".0%", height=540,
-                          legend=dict(orientation="h", y=1.08), margin=dict(t=50))
+        fig.update_layout(
+            template="plotly_white",
+            font=dict(
+                family="Inter",
+                color="#526575",
+                size=11
+            ),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="#FFFFFF",
+            margin=dict(l=15, r=15, t=25, b=15)
+        )
         st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("#### Carteiras ótimas")
