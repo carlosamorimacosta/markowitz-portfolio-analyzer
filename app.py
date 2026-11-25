@@ -1,16 +1,23 @@
+import os
+import dash
+from dash import dcc, html, Input, Output, State
+import dash_bootstrap_components as dbc
 
-import io
-import re
-import warnings
-from datetime import date, timedelta
-
-import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-import requests
-import streamlit as st
+import numpy as np
 import yfinance as yf
+import plotly.graph_objects as go
+
 from scipy.optimize import minimize
+
+app = dash.Dash(
+    __name__,
+    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    suppress_callback_exceptions=True,
+    title="Markowitz | Portfolio Analytics"
+)
+
+server = app.server
 
 st.markdown("""
 <style>
@@ -419,3 +426,10 @@ for tab, (freq, data) in zip(tabs, results.items()):
 st.divider()
 st.caption("Fontes: Yahoo Finance via yfinance (preços ajustados) e Banco Central do Brasil/SGS (Selic). "
            "Resultados históricos são estimativas e não constituem recomendação de investimento.")
+
+if __name__ == "__main__":
+    app.run(
+        debug=False,
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8050))
+    )
