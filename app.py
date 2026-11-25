@@ -12,7 +12,72 @@ import streamlit as st
 import yfinance as yf
 from scipy.optimize import minimize
 
-st.set_page_config(page_title="Markowitz Portfolio Analyzer", page_icon="📈", layout="wide")
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+    --navy: #10283F;
+    --green: #28A879;
+    --background: #F3F5F7;
+    --border: #E2E8EE;
+}
+
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+}
+
+.stApp {
+    background-color: var(--background);
+}
+
+.block-container {
+    max-width: 1500px;
+    padding-top: 1.5rem;
+}
+
+[data-testid="stSidebar"] {
+    background-color: white;
+    border-right: 1px solid var(--border);
+}
+
+[data-testid="stMetric"] {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+}
+
+[data-testid="stMetricValue"] {
+    color: var(--navy);
+    font-weight: 700;
+}
+
+h1, h2, h3 {
+    color: var(--navy) !important;
+}
+
+.stButton > button {
+    background: var(--navy);
+    color: white;
+    border-radius: 7px;
+    border: none;
+    font-weight: 600;
+}
+
+.stButton > button:hover {
+    background: #1D4964;
+    color: white;
+}
+
+div[data-testid="stPlotlyChart"] {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # Lista inicial de tickers líquidos/conhecidos. Não é uma fotografia oficial e dinâmica
 # da carteira teórica do Ibovespa; o usuário pode editar, complementar ou importar CSV.
