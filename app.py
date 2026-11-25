@@ -274,8 +274,57 @@ def panel(title, content, subtitle=None):
                     className="chart-card")
 
 
-def graph(fig):
-    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True}, responsive=True)
+
+def graph(fig, height=None):
+
+    if height is None:
+        height = int(fig.layout.height or 420)
+
+    fig.update_layout(
+        autosize=True,
+        height=height,
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FFFFFF",
+
+        margin=dict(
+            l=65,
+            r=30,
+            t=55,
+            b=65
+        ),
+
+        font=dict(
+            family="Inter, Arial, sans-serif",
+            size=12,
+            color="#10283F"
+        )
+    )
+
+    return dcc.Graph(
+        figure=fig,
+        className="institutional-graph",
+
+        style={
+            "width": "100%",
+            "height": f"{height}px",
+            "minHeight": f"{height}px"
+        },
+
+        config={
+            "displaylogo": False,
+            "responsive": True,
+            "displayModeBar": "hover",
+            "scrollZoom": False,
+
+            "toImageButtonOptions": {
+                "format": "png",
+                "scale": 2
+            }
+        },
+
+        responsive=True
+    )
+
 
 
 def table(frame, formats=None):
@@ -592,21 +641,102 @@ def render_results(tickers, start, end, freq, limit, points):
         go.Scatter(x=av,y=mu,mode="markers+text",text=assets,textposition="top center",name="Ativos",marker=dict(color="#8295A8",size=8)),
         go.Scatter(x=[mv],y=[mr],mode="markers",name="Mínima variância",marker=dict(color="#497B98",size=12,symbol="diamond")),
         go.Scatter(x=[tv],y=[tr],mode="markers",name="Máximo Sharpe",marker=dict(color=GREEN,size=14,symbol="star"))])
-    fig.update_layout(xaxis_title="Volatilidade anualizada",yaxis_title="Retorno esperado anualizado",xaxis_tickformat=".1%",yaxis_tickformat=".1%",height=460)
+    fig.update_layout(
+        height=440,
+    
+        xaxis_title="Volatilidade anualizada",
+        yaxis_title="Retorno esperado anualizado",
+    
+        xaxis_tickformat=".1%",
+        yaxis_tickformat=".1%",
+    
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.20,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=11)
+        ),
+    
+        hovermode="closest"
+    )
     pie = go.Figure(go.Pie(labels=assets,values=np.maximum(tan,0),hole=.60,sort=False))
-    pie.update_layout(height=460,showlegend=True)
+    pie.update_layout(
+        height=440,
+    
+        showlegend=True,
+    
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.12,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=11)
+        )
+    )
+
+    pie.update_traces(
+        hole=0.60,
+        textinfo="percent",
+        textposition="inside",
+    
+        marker=dict(
+            line=dict(
+                color="#FFFFFF",
+                width=2
+            )
+        ),
+    
+        hovertemplate=(
+            "<b>%{label}</b><br>"
+            "Peso: %{percent}"
+            "<extra></extra>"
+        )
+    )
     holdings = pd.DataFrame({"Ativo":assets,"Peso MVP":mvp,"Peso máximo Sharpe":tan,"Retorno esperado":mu,"Volatilidade":av})
     holdings = holdings.sort_values("Peso máximo Sharpe",ascending=False)
     formats={c:"{:.2%}" for c in holdings.columns if c!="Ativo"}
     corr=returns.corr()
     cov_df=pd.DataFrame(cov,index=assets,columns=assets)
     heat=go.Figure(go.Heatmap(z=corr.values,x=assets,y=assets,zmin=-1,zmax=1,colorscale=[[0,"#B54747"],[.5,"#FFFFFF"],[1,NAVY]],colorbar=dict(title="Correlação")))
-    heat.update_layout(height=max(350,min(850,25*len(assets)+120)))
+    heat.update_layout(
+        height=max(
+            420,
+            min(850, 30 * len(assets) + 150)
+        ),
+    
+        xaxis=dict(
+            side="bottom",
+            tickangle=-45
+        ),
+    
+        yaxis=dict(
+            autorange="reversed"
+        )
+    )
     price_fig=go.Figure()
     for asset in assets:
         series=prices[asset].dropna()
         price_fig.add_trace(go.Scatter(x=series.index,y=series/series.iloc[0]*100,name=asset,mode="lines"))
-    price_fig.update_layout(yaxis_title="Índice (base 100)",height=420,hovermode="x unified")
+    price_fig.update_layout(
+        height=420,
+    
+        xaxis_title="Período",
+        yaxis_title="Índice (base 100)",
+    
+        hovermode="x unified",
+    
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.22,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=11)
+        )
+    )
     excluded=sorted(set(tickers)-set(assets))
     warnings=[dbc.Alert("Ativos excluídos por indisponibilidade ou dados incompletos: "+", ".join(excluded),color="warning")] if excluded else []
     beta_panel=[]
