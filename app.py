@@ -339,15 +339,112 @@ def field(label, component):
     return html.Div([html.Label(label, className="input-label"), component])
 
 
-sidebar = html.Aside([
-    html.Div([html.H2("MARKOWITZ", className="brand-title"),
-              html.Div("Portfolio Analytics", className="brand-subtitle")], className="sidebar-brand"),
-    html.Div("Workspace", className="sidebar-section-title"),
-    html.A("Parâmetros", href="#parameters", className="nav-link"),
-    html.A("Resultados", href="#results", className="nav-link"),
-    html.A("Metodologia", href="#methodology", className="nav-link"),
-    html.Div(["Quantitative Research", html.Br(), "Mean-variance optimization"], className="sidebar-footer")
-], className="sidebar")
+sidebar = html.Aside(
+    [
+        # Identidade visual
+        html.Div(
+            [
+                html.H2(
+                    "MARKOWITZ",
+                    className="brand-title"
+                ),
+                html.Div(
+                    "Portfolio Analytics",
+                    className="brand-subtitle"
+                )
+            ],
+            className="sidebar-brand"
+        ),
+
+        # Navegação
+        html.Div(
+            "Workspace",
+            className="sidebar-section-title"
+        ),
+
+        html.A(
+            "Parâmetros",
+            href="#parameters",
+            className="nav-link"
+        ),
+
+        html.A(
+            "Resultados",
+            href="#results",
+            className="nav-link"
+        ),
+
+        html.A(
+            "Metodologia",
+            href="#methodology",
+            className="nav-link"
+        ),
+
+        # Rodapé da sidebar
+        html.Div(
+            [
+                html.Div(
+                    "Quantitative Research",
+                    className="sidebar-research"
+                ),
+
+                html.Div(
+                    "Mean-variance optimization",
+                    className="sidebar-research-subtitle"
+                ),
+
+                # Identificação do desenvolvedor
+                html.Div(
+                    [
+                        html.Div(
+                            "DEVELOPED BY",
+                            className="author-label"
+                        ),
+
+                        html.Div(
+                            "Carlos Henrique",
+                            className="author-name"
+                        ),
+
+                        html.Div(
+                            "Economics Student",
+                            className="author-affiliation"
+                        ),
+
+                        html.Div(
+                            "FGV EESP",
+                            className="author-affiliation"
+                        ),
+
+                        # Links profissionais
+                        html.Div(
+                            [
+                                html.A(
+                                    "GitHub ↗",
+                                    href="https://github.com/carlosamorimacosta",
+                                    target="_blank",
+                                    rel="noopener noreferrer"
+                                ),
+
+                                html.A(
+                                    "LinkedIn ↗",
+                                    href="https://www.linkedin.com/in/carloshenriqueamorim",
+                                    target="_blank",
+                                    rel="noopener noreferrer"
+                                )
+                            ],
+                            className="author-links"
+                        )
+                    ],
+                    className="author-signature"
+                )
+            ],
+            className="sidebar-footer"
+        )
+    ],
+    className="sidebar"
+)
+
 
 filters = html.Div([
     html.H3("Parâmetros de investimento", className="section-title"),
