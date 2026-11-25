@@ -310,18 +310,231 @@ filters = html.Div([
     html.Button("Calcular carteiras", id="run", n_clicks=0, className="primary-button")
 ], id="parameters", className="filter-card")
 
-app.layout = html.Div([sidebar, html.Main([
-    html.Div([html.Span("Workspace / Portfolio Analytics", className="breadcrumb-text"),
-              html.Span("Brazilian Equities", className="breadcrumb-text")], className="topbar"),
-    html.Div([
-        html.Div([html.H1("Portfolio Analytics", className="page-title"),
-                  html.P("Construção de carteiras e análise quantitativa de risco", className="page-subtitle")], className="page-header"),
-        filters,
-        dcc.Loading(html.Div(id="results", children=dbc.Alert("Configure os parâmetros e clique em Calcular carteiras.", color="info")), type="circle", color=GREEN),
-        html.Div([html.H2("Metodologia"), html.P("Retornos simples de preços ajustados; médias históricas e covariância amostral anualizadas por 252 dias úteis ou 12 meses. Otimização SLSQP com pesos não negativos e soma igual a 1. A Selic histórica é utilizada como aproximação da taxa livre de risco; segue a convenção original: média mensal multiplicada por 12 e média diária capitalizada por 252. Os resultados são estimativas dentro da amostra, não previsões nem recomendações de investimento.")], id="methodology", className="methodology-card"),
-        html.Footer(["Fontes: Yahoo Finance / yfinance · Banco Central do Brasil / SGS", "Research tool"], className="dashboard-footer")
-    ], className="content-wrapper")
-], className="main-content")])
+app.layout = html.Div(
+    [
+        dcc.Location(id="url"),
+
+        # SIDEBAR
+        html.Div(
+            [
+                html.Div(
+                    [
+                        html.H1("MARKOWITZ", className="brand-title"),
+                        html.Div("Portfolio Analytics", className="brand-subtitle"),
+                    ],
+                    className="sidebar-brand",
+                ),
+
+                html.Div("Workspace", className="sidebar-section-title"),
+                html.Div("Parâmetros", className="nav-link active"),
+                html.Div("Resultados", className="nav-link"),
+                html.Div("Metodologia", className="nav-link"),
+
+                html.Div(
+                    [
+                        html.Div("Quantitative Research"),
+                        html.Div("Mean-variance optimization"),
+                        html.Div("Brazilian Equities"),
+                    ],
+                    className="sidebar-footer",
+                ),
+            ],
+            className="sidebar",
+        ),
+
+        # MAIN
+        html.Div(
+            [
+                html.Div(
+                    [
+                        html.Div(
+                            [
+                                html.Div("Workspace / Portfolio Analytics", className="breadcrumb-text"),
+                                html.H1("Portfolio Analytics", className="page-title"),
+                                html.P(
+                                    "Construção de carteiras e análise quantitativa de risco",
+                                    className="page-subtitle",
+                                ),
+                            ]
+                        ),
+                    ],
+                    className="topbar",
+                ),
+
+                html.Div(
+                    [
+                        # KPI CARDS
+                        html.Div(
+                            [
+                                kpi_card("Expected Return", "--", "Annualized expected return", positive=True),
+                                kpi_card("Volatility", "--", "Annualized portfolio risk"),
+                                kpi_card("Sharpe Ratio", "--", "Risk-adjusted return"),
+                                kpi_card("Risk-Free Rate", "--", "Annualized Selic"),
+                            ],
+                            className="kpi-grid",
+                        ),
+
+                        # FILTER CARD
+                        html.Div(
+                            [
+                                html.H3("Parâmetros de investimento", className="section-title"),
+
+                                html.Div(
+                                    [
+                                        html.Div(
+                                            [
+                                                html.Label("Universo de ativos", className="form-label"),
+                                                dcc.RadioItems(
+                                                    id="universe-mode",
+                                                    options=[
+                                                        {"label": " Lista inicial editável", "value": "starter"},
+                                                        {"label": " Personalizado", "value": "custom"},
+                                                    ],
+                                                    value="custom",
+                                                    inline=True,
+                                                ),
+                                            ]
+                                        ),
+
+                                        html.Div(
+                                            [
+                                                html.Label("Tickers separados por vírgula", className="form-label"),
+                                                dcc.Textarea(
+                                                    id="tickers-input",
+                                                    value="ITUB4, WEGE3, PETR4, VALE3",
+                                                    style={"width": "100%", "height": 90},
+                                                ),
+                                            ]
+                                        ),
+
+                                        html.Div(
+                                            [
+                                                html.Label("Período", className="form-label"),
+                                                dcc.DatePickerRange(
+                                                    id="date-range",
+                                                    start_date="2021-01-01",
+                                                    end_date=date.today(),
+                                                    display_format="DD/MM/YYYY",
+                                                ),
+                                            ]
+                                        ),
+
+                                        html.Div(
+                                            [
+                                                html.Label("Frequência", className="form-label"),
+                                                dcc.Dropdown(
+                                                    id="freq-choice",
+                                                    options=[
+                                                        {"label": "Mensal", "value": "Mensal"},
+                                                        {"label": "Diária", "value": "Diária"},
+                                                        {"label": "Ambas", "value": "Ambas"},
+                                                    ],
+                                                    value="Mensal",
+                                                    clearable=False,
+                                                ),
+                                            ]
+                                        ),
+
+                                        html.Div(
+                                            [
+                                                html.Label("Peso máximo por ativo", className="form-label"),
+                                                dcc.Slider(
+                                                    id="max-weight",
+                                                    min=5,
+                                                    max=100,
+                                                    step=5,
+                                                    value=100,
+                                                    marks={i: f"{i}%" for i in [5, 25, 50, 75, 100]},
+                                                ),
+                                            ]
+                                        ),
+
+                                        html.Div(
+                                            [
+                                                html.Button(
+                                                    "Run Optimization",
+                                                    id="run-button",
+                                                    n_clicks=0,
+                                                    className="primary-button",
+                                                )
+                                            ],
+                                            style={"display": "flex", "alignItems": "end"},
+                                        ),
+                                    ],
+                                    className="filter-grid",
+                                ),
+                            ],
+                            className="filter-card",
+                        ),
+
+                        # CHARTS
+                        html.Div(
+                            [
+                                html.Div(
+                                    [
+                                        html.Div("Efficient Frontier", className="chart-title"),
+                                        dcc.Graph(id="frontier-chart", config={"displayModeBar": False}),
+                                    ],
+                                    className="chart-card",
+                                ),
+                                html.Div(
+                                    [
+                                        html.Div("Optimal Allocation", className="chart-title"),
+                                        dcc.Graph(id="allocation-chart", config={"displayModeBar": False}),
+                                    ],
+                                    className="chart-card",
+                                ),
+                            ],
+                            className="chart-grid",
+                        ),
+
+                        html.Div(
+                            [
+                                html.Div(
+                                    [
+                                        html.Div("Portfolio Weights", className="chart-title"),
+                                        html.Div(id="weights-table"),
+                                    ],
+                                    className="chart-card",
+                                ),
+                                html.Div(
+                                    [
+                                        html.Div("Asset Statistics", className="chart-title"),
+                                        html.Div(id="asset-stats-table"),
+                                    ],
+                                    className="chart-card",
+                                ),
+                            ],
+                            className="equal-grid",
+                        ),
+
+                        html.Div(
+                            [
+                                html.Div(
+                                    [
+                                        html.Div("Correlation Matrix", className="chart-title"),
+                                        dcc.Graph(id="corr-heatmap", config={"displayModeBar": False}),
+                                    ],
+                                    className="chart-card",
+                                ),
+                                html.Div(
+                                    [
+                                        html.Div("Normalized Price History", className="chart-title"),
+                                        dcc.Graph(id="price-history-chart", config={"displayModeBar": False}),
+                                    ],
+                                    className="chart-card",
+                                ),
+                            ],
+                            className="equal-grid",
+                        ),
+                    ],
+                    className="content-wrapper",
+                ),
+            ],
+            className="main-content",
+        ),
+    ]
+)
 
 
 @app.callback(Output("tickers", "value"), Output("upload-message", "children"),
