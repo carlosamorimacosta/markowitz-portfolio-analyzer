@@ -1275,3 +1275,77 @@ body {
 
 }
 
+
+/* =========================================================
+   AUTHOR SIGNATURE
+   ========================================================= */
+
+.sidebar-footer {
+    margin-top: auto;
+    padding: 20px 10px 4px;
+    border-top: none;
+}
+
+.sidebar-research {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: #A5BACB;
+}
+
+.sidebar-research-subtitle {
+    font-size: 10px;
+    color: #91A6B8;
+    margin-top: 4px;
+}
+
+.author-signature {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.author-label {
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 1.5px;
+    color: #91A6B8;
+    margin-bottom: 7px;
+}
+
+.author-name {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.2px;
+    color: #FFFFFF;
+}
+
+.author-affiliation {
+    font-size: 10px;
+    font-weight: 400;
+    color: #A5BACB;
+    margin-top: 4px;
+    line-height: 1.6;
+}
+
+.author-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 12px;
+}
+
+.author-links a {
+    font-size: 10px;
+    font-weight: 500;
+    color: #68C5AC;
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+.author-links a:hover {
+    color: #FFFFFF;
+}
+
+
