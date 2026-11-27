@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 import plotly.io as pio
 from scipy.optimize import minimize, linprog, LinearConstraint
 from scipy.stats import norm
-from dash import Dash, dcc, html, Input, Output, State, no_update
+from dash import Dash, dcc, html, Input, Output, State, no_update, ctx
 import dash_bootstrap_components as dbc
 BASE_DIR = Path(__file__).resolve().parent
 app = Dash(
@@ -274,9 +274,9 @@ def portfolio_return_series(returns, weights, cash_returns=None):
     r=returns@w
     cash=1-w.sum()
     if abs(cash)>1e-8:
-        if cash_returns is None: raise ValueError('Selic necessária para financiar exposição líquida acima de 100%.')
+        if cash_returns is None: raise ValueError('Selic necessária para caixa ou financiamento residual.')
         rates=cash_returns.reindex(r.index)
-        if rates.isna().any(): raise ValueError('Selic incompleta na amostra da carteira alavancada.')
+        if rates.isna().any(): raise ValueError('Selic incompleta nas datas da carteira.')
         r=r+cash*rates
     return r.rename('Carteira')
 
@@ -422,6 +422,262 @@ def table(frame, formats=None):
 
 def field(label, component):
     return html.Div([html.Label(label, className="input-label"), component])
+# =========================================================
+# INVESTOR PROFILE / STRATEGIC ASSET ALLOCATION
+# =========================================================
+
+PROFILE_A = {"Conservador": 12.0, "Moderado": 5.0, "Agressivo": 2.0}
+PROFILE_COLORS = {"Conservador": "#497B98", "Moderado": "#B78127", "Agressivo": "#16836B"}
+
+# Educational questionnaire: ordinal tolerance and separate capacity gates.
+# None of these scores or limits is a validated suitability model.
+TOLERANCE_QUESTIONS = [
+    ("risk-preference", "1. Qual é sua preferência entre risco e retorno?", [
+        "Preservar o capital", "Crescer com pouca oscilação", "Crescer aceitando oscilações relevantes",
+        "Buscar maior retorno potencial, aceitando alta volatilidade"]),
+    ("risk-reaction", "2. Se a carteira caísse 20% em três meses, como reagiria?", [
+        "Resgataria tudo", "Reduziria a exposição", "Manteria a estratégia",
+        "Avaliaria aumentar a exposição, considerando os fundamentos"]),
+    ("risk-emotional", "3. Qual queda temporária conseguiria tolerar emocionalmente?", [
+        "Até 5%", "Até 10%", "Até 20%", "Acima de 20%"]),
+    ("risk-scenario", "4. Qual cenário hipotético preferiria?", [
+        "Ganho pequeno, baixa incerteza", "Ganho moderado, pequenas perdas possíveis",
+        "Ganho potencial elevado, perdas relevantes possíveis",
+        "Ganho potencial muito elevado, perdas expressivas possíveis"]),
+]
+# Each alternative: label, value, ceiling on risky assets. These are transparent
+# demonstration parameters, not empirically calibrated allocations or loss limits.
+CAPACITY_QUESTIONS = [
+    ("capacity-goal", "5. Objetivo principal deste patrimônio", [
+        ("Reserva de emergência", "reserve", 0.0), ("Aquisição de bem ou despesa planejada", "purchase", .50),
+        ("Geração de renda", "income", .60), ("Acumulação patrimonial", "growth", 1.0),
+        ("Aposentadoria de longo prazo", "retire", 1.0)]),
+    ("capacity-horizon", "6. Horizonte de investimento", [
+        ("Menos de 1 ano", "short", 0.0), ("1 a 3 anos", "medium", .25),
+        ("3 a 5 anos", "long", .60), ("Mais de 5 anos", "verylong", 1.0)]),
+    ("capacity-withdrawal", "7. Quanto poderá precisar resgatar em 12 meses?", [
+        ("Mais de 50%", "high", .25), ("25% a 50%", "mid", .50),
+        ("Até 25%", "low", .75), ("Nenhum", "none", 1.0)]),
+    ("capacity-reserve", "8. Reserva de emergência em meses de despesas", [
+        ("Não possuo", "none", 0.0), ("Menos de 3 meses", "low", .25),
+        ("3 a 6 meses", "mid", .60), ("Mais de 6 meses", "high", 1.0)]),
+    ("capacity-income", "9. Estabilidade da renda", [
+        ("Instável", "unstable", .25), ("Parcialmente previsível", "partial", .60),
+        ("Estável", "stable", 1.0), ("Estável com capacidade de poupança", "high", 1.0)]),
+    ("capacity-loss", "10. Perda suportável sem comprometer despesas essenciais ou objetivos", [
+        ("Nenhuma", "none", 0.0), ("Até 5%", "5", .25), ("Até 10%", "10", .50),
+        ("Até 20%", "20", .75), ("Acima de 20%", "more", 1.0)]),
+]
+KNOWLEDGE_QUESTIONS = [
+    ("knowledge-experience", "11. Maior nível de experiência com investimentos", [
+        ("Nenhuma experiência", "none"), ("Renda fixa e fundos", "fixed"),
+        ("Ações e ETFs", "stocks"), ("Derivativos ou operações alavancadas", "advanced")]),
+    ("knowledge-stock", "12. Uma ação pode perder mais de 30% em um ano?", [("Sim", "yes"), ("Não", "no"), ("Não sei", "unknown")]),
+    ("knowledge-short", "13. Uma posição vendida pode gerar perdas superiores ao capital destinado à operação?", [("Sim", "yes"), ("Não", "no"), ("Não sei", "unknown")]),
+    ("knowledge-leverage", "14. Alavancagem amplifica tanto ganhos quanto perdas?", [("Sim", "yes"), ("Não", "no"), ("Não sei", "unknown")]),
+    ("knowledge-var", "15. VaR de 95% representa a maior perda possível?", [("Sim", "yes"), ("Não", "no"), ("Não sei", "unknown")]),
+]
+# Lotteries with two equiprobable annual returns; values are decimal rates.
+CE_QUESTIONS = [
+    ("ce-one", "16. Retorno de 0% ou 20%, com 50% de chance cada", 0., .20),
+    ("ce-two", "17. Retorno de 2% ou 18%, com 50% de chance cada", .02, .18),
+    ("ce-three", "18. Retorno de -4% ou 16%, com 50% de chance cada", -.04, .16),
+]
+
+
+def classify_investor(answers):
+    if len(answers) != len(TOLERANCE_QUESTIONS) or any(a not in (0,1,2,3) for a in answers):
+        raise ValueError("Responda às quatro perguntas de tolerância.")
+    score = int(sum(answers))
+    name = "Conservador" if score <= 4 else ("Moderado" if score <= 8 else "Agressivo")
+    return {"profile": name, "score": score, "A": PROFILE_A[name]}
+
+
+def evaluate_profile(tolerance, capacity, knowledge, calibration="score", ce_answers=None):
+    result = classify_investor(tolerance)
+    if len(capacity) != len(CAPACITY_QUESTIONS) or len(knowledge) != len(KNOWLEDGE_QUESTIONS):
+        raise ValueError("Preencha todo o questionário.")
+    limits = []
+    for (_, question, opts), answer in zip(CAPACITY_QUESTIONS, capacity):
+        matches = [(label, limit) for label, val, limit in opts if val == answer]
+        if not matches:
+            raise ValueError("Responda todas as perguntas de capacidade financeira.")
+        label, limit = matches[0]
+        limits.append((question, label, limit))
+    for (_, question, opts), answer in zip(KNOWLEDGE_QUESTIONS, knowledge):
+        if answer not in {value for _, value in opts}:
+            raise ValueError("Responda todas as perguntas de conhecimento.")
+    correct = ("yes", "yes", "yes", "no")
+    knowledge_score = sum(a == b for a, b in zip(knowledge[1:], correct))
+    # No automatic access to complex strategies, regardless of quiz score.
+    knowledge_cap = 1.0
+    if knowledge[0] == "none" or knowledge[1] != "yes":
+        knowledge_cap = .25
+    elif knowledge[0] == "fixed" or knowledge[4] != "no":
+        knowledge_cap = .60
+    limits.append(("Experiência e compreensão de risco básico", f"{knowledge_score}/4 respostas corretas", knowledge_cap))
+    risk_cap = min(item[2] for item in limits)
+    result.update({"cap": risk_cap, "limits": limits, "knowledge_score": knowledge_score,
+                   "calibration": calibration, "ce_values": []})
+    if calibration == "ce":
+        if ce_answers is None or len(ce_answers) != 3 or any(x is None for x in ce_answers):
+            raise ValueError("Responda aos três cenários de equivalente de certeza.")
+        aversions = []
+        for (_, _, low, high), ce in zip(CE_QUESTIONS, ce_answers):
+            mean = (low+high)/2
+            variance = ((high-low)/2)**2
+            a = 2*(mean-float(ce))/variance
+            if not np.isfinite(a) or not 2-1e-6 <= a <= 12+1e-6:
+                raise ValueError("Equivalente de certeza inválido.")
+            aversions.append(float(np.clip(a,2,12)))
+        result["A"] = float(np.median(aversions))
+        result["ce_values"] = aversions
+    elif calibration != "score":
+        raise ValueError("Método de calibração inválido.")
+    return result
+
+
+def personalized_portfolio(weights_tangent, mu, cov, rf, A, max_risky_allocation=1.,
+                           max_volatility=None):
+    """CAL allocation (long-only, no borrowing); inputs annualized, decimals."""
+    w_t, mu, cov = np.asarray(weights_tangent,float), np.asarray(mu,float), np.asarray(cov,float)
+    if not np.isfinite(A) or A <= 0 or not 0 <= max_risky_allocation <= 1:
+        raise ValueError("Aversão ou limite inválido.")
+    if (not np.isclose(w_t.sum(),1.,atol=2e-6) or min(w_t) < -2e-6):
+        raise ValueError("A referência CAL deve ser long-only e 100% investida.")
+    w_t = np.maximum(w_t,0)
+    w_t /= w_t.sum()
+    mu_t = float(w_t@mu)
+    var_t = float(w_t@cov@w_t)
+    if var_t <= 1e-12:
+        raise ValueError("A carteira de referência tem variância praticamente nula; CAL indefinida.")
+    ceiling = max_risky_allocation
+    if max_volatility is not None:
+        ceiling = min(ceiling, max_volatility / np.sqrt(var_t))
+    theoretical = (mu_t-rf)/(A*var_t)
+    y = float(np.clip(theoretical,0.,ceiling))
+    return allocation_summary(y*w_t,mu,cov,rf,A, theoretical=theoretical, cal_ceiling=ceiling)
+
+
+def allocation_summary(w,mu,cov,rf,A,theoretical=None,cal_ceiling=None):
+    w = np.asarray(w,float)
+    er,vol = portfolio_moments(w,mu,cov,rf)
+    return {"A":float(A), "weights":w, "y":float(w.sum()), "weight_rf":float(1-w.sum()),
+            "expected_return":er,"volatility":vol,"sharpe":(er-rf)/vol if vol>1e-10 else np.nan,
+            "utility":float(er-A/2*vol**2),"y_theoretical":theoretical,"cal_ceiling":cal_ceiling}
+
+
+def direct_profile_portfolio(mu,cov,rf,A,cap,limit,max_volatility=None):
+    """Convex mean-variance utility, cash residual, no short or leverage."""
+    mu,cov = np.asarray(mu,float),np.asarray(cov,float)
+    if A <= 0 or not 0 <= cap <= 1 or limit <= 0:
+        raise ValueError("Restrições de utilidade inválidas.")
+    n = len(mu)
+    if cap <= 1e-12:
+        return allocation_summary(np.zeros(n),mu,cov,rf,A)
+    ex = mu-rf
+    scale = max(float(np.max(np.abs(ex))),A*float(np.max(np.diag(cov))),1e-4)
+    constraints = [LinearConstraint(np.ones((1,n)),0.,cap)]
+    if max_volatility is not None:
+        vscale = max(max_volatility**2,float(np.max(np.diag(cov))),1e-8)
+        constraints.append({"type":"ineq","fun":lambda w:(max_volatility**2-w@cov@w)/vscale,
+                            "jac":lambda w:-2*cov@w/vscale})
+    res = minimize(lambda w:(A/2*w@cov@w-ex@w)/scale,np.zeros(n),
+                   jac=lambda w:(A*cov@w-ex)/scale,bounds=[(0.,min(limit,cap))]*n,
+                   constraints=constraints,method="SLSQP",options={"maxiter":1000,"ftol":1e-11})
+    w = np.maximum(res.x,0.)
+    if not res.success or w.sum()>cap+1e-6 or max(w)>limit+1e-6 or (
+            max_volatility is not None and w@cov@w>max_volatility**2+1e-8):
+        raise RuntimeError("Otimização de utilidade não convergiu: "+str(res.message))
+    return allocation_summary(w,mu,cov,rf,A)
+
+
+def complete_frontier(mu,cov,rf,cap,limit,max_volatility=None,points=36):
+    """Efficient frontier including cash with the same portfolio constraints."""
+    mu,cov=np.asarray(mu,float),np.asarray(cov,float)
+    n=len(mu); ex=mu-rf
+    rows=[{"Retorno":rf,"Volatilidade":0.}]
+    if cap<=1e-10 or ex.max()<=1e-10:
+        return pd.DataFrame(rows)
+    bounds=[(0.,min(cap,limit))]*n
+    linear=LinearConstraint(np.ones((1,n)),0.,cap)
+    varscale=max(float(np.max(np.diag(cov))),1e-8)
+    ret_scale=max(float(np.max(np.abs(ex))),1e-6)
+    lp=linprog(-ex,A_ub=np.ones((1,n)),b_ub=[cap],bounds=bounds,method="highs")
+    if not lp.success:
+        raise RuntimeError("Não foi possível encontrar o retorno máximo factível.")
+    wmax=lp.x
+    if max_volatility is not None and wmax@cov@wmax>max_volatility**2:
+        seed=wmax*min(1.,max_volatility/np.sqrt(wmax@cov@wmax))
+        con={"type":"ineq","fun":lambda w:(max_volatility**2-w@cov@w)/varscale,
+             "jac":lambda w:-2*cov@w/varscale}
+        res=minimize(lambda w:-ex@w/ret_scale,seed,jac=lambda w:-ex/ret_scale,
+                     bounds=bounds,constraints=[linear,con],method="SLSQP",
+                     options={"maxiter":1000,"ftol":1e-11})
+        if not res.success or res.x@cov@res.x>max_volatility**2+1e-8 or res.x.sum()>cap+1e-6:
+            raise RuntimeError("Não foi possível calcular o extremo da fronteira com limite de volatilidade.")
+        wmax=res.x
+    peak=float(ex@wmax)
+    if peak<=1e-10: return pd.DataFrame(rows)
+    for t in np.linspace(0,peak,max(2,points))[1:]:
+        con=LinearConstraint((ex/ret_scale)[None,:],t/ret_scale,t/ret_scale)
+        res=minimize(lambda w:w@cov@w/varscale,(t/peak)*wmax,
+                     jac=lambda w:2*cov@w/varscale,bounds=bounds,
+                     constraints=[linear,con],method="SLSQP",options={"maxiter":700,"ftol":1e-10})
+        if not res.success: continue
+        w=res.x
+        vol=float(np.sqrt(max(w@cov@w,0.)))
+        if abs(ex@w-t)>1e-6 or w.sum()>cap+1e-6 or (max_volatility is not None and vol>max_volatility+1e-6):
+            continue
+        rows.append({"Retorno":float(rf+ex@w),"Volatilidade":vol})
+    return pd.DataFrame(rows)
+
+
+def profile_questionnaire():
+    def drop(qid, label, pairs):
+        return field(label, dcc.Dropdown(id=qid,options=[{"label":l,"value":v} for l,v in pairs],
+                                         placeholder="Selecione uma resposta",clearable=True))
+    def block(title,subtitle,children):
+        return html.Div([html.H3(title,className="chart-title"),html.P(subtitle,className="form-text"),
+                         html.Div(children,style={"display":"grid","gridTemplateColumns":"repeat(auto-fit,minmax(min(100%, 250px),1fr))","gap":"16px"})],
+                        className="chart-card")
+    ce_fields=[]
+    for qid,q,low,high in CE_QUESTIONS:
+        mean=(low+high)/2; var=((high-low)/2)**2
+        choices=[(f"{(mean-a/2*var):.2%}",round(mean-a/2*var,12)) for a in (12,8,5,4,2)]
+        ce_fields.append(drop(qid,q+" — retorno certo equivalente",choices))
+    return html.Section([
+        html.H2("Investor Profile & Strategic Asset Allocation",className="section-title"),
+        html.P("Questionário educacional de tolerância, capacidade financeira e conhecimento. Os limites são regras ilustrativas, "
+               "não suitability validado nem recomendação de investimento.",className="page-subtitle"),
+        dbc.Alert("Calcule as carteiras na seção Parâmetros antes de gerar o relatório. O perfil utiliza a mesma amostra histórica; "
+                  "por segurança metodológica, esta seção não permite vendas a descoberto nem financiamento.",color="info"),
+        block("01 · Tolerância comportamental","Quatro respostas, pontuação de 0 a 12. Nenhuma alternativa é considerada melhor.",
+              [drop(qid,q,[(label,i) for i,label in enumerate(opts)]) for qid,q,opts in TOLERANCE_QUESTIONS]),
+        block("02 · Capacidade financeira e objetivos","As respostas impõem limites independentes; prevalece o menor teto de exposição.",
+              [drop(qid,q,[(l,v) for l,v,_ in opts]) for qid,q,opts in CAPACITY_QUESTIONS]),
+        block("03 · Conhecimento e experiência","As respostas de conhecimento são avaliadas separadamente do apetite a risco.",
+              [drop(qid,q,opts) for qid,q,opts in KNOWLEDGE_QUESTIONS]),
+        html.Details([
+            html.Summary("Calibração opcional por equivalente de certeza"),
+            html.P("Para cada loteria hipotética de dois resultados igualmente prováveis, indique o retorno certo que seria equivalente. "
+                   "O modelo usa a mediana de três valores implícitos de A (intervalo ilustrativo de 2 a 12).",className="form-text"),
+            html.Div(ce_fields,style={"display":"grid","gridTemplateColumns":"repeat(auto-fit,minmax(min(100%, 240px),1fr))","gap":"16px"})],
+            className="chart-card"),
+        block("04 · Configuração do modelo","Selecione a frequência da amostra calculada e o método. Volatilidade-limite é uma estimativa, não garantia.",
+              [field("Frequência",dcc.Dropdown(id="profile-frequency",options=[],value=None,clearable=False,disabled=True)),
+               field("Método de alocação",dcc.Dropdown(id="profile-model",options=[
+                   {"label":"CAL — tangente + Selic","value":"cal"},{"label":"Utilidade com restrições (otimização direta)","value":"utility"}],value="cal",clearable=False)),
+               field("Calibração do coeficiente A",dcc.Dropdown(id="profile-calibration",options=[
+                   {"label":"Pontuação comportamental (A = 12, 5 ou 2)","value":"score"},
+                   {"label":"Equivalente de certeza (3 cenários)","value":"ce"}],value="score",clearable=False)),
+               field("Teto adicional de volatilidade anual (opcional)",dcc.Dropdown(id="profile-volatility",options=[
+                   {"label":"Sem teto adicional","value":0}]+[{"label":f"{v}% a.a.","value":v} for v in (5,10,15,20,25,30,40)],value=0,clearable=False))]),
+        html.Button("Calcular carteira do perfil",id="profile-run",n_clicks=0,className="primary-button"),
+        dcc.Loading(html.Div(id="profile-result",children=dbc.Alert("Aguardando cálculo e respostas.",color="info")),type="circle",color=GREEN),
+    ],id="investor-profile",style={"marginTop":"24px","marginBottom":"24px","scrollMarginTop":"20px"})
+
+
 sidebar = html.Aside(
     [
         # Identidade visual
@@ -453,6 +709,7 @@ sidebar = html.Aside(
             href="#results",
             className="nav-link"
         ),
+        html.A("Perfil do investidor", href="#investor-profile", className="nav-link"),
         html.A(
             "Metodologia",
             href="#methodology",
@@ -554,6 +811,7 @@ app.layout = html.Div(
     [
         # Sidebar institucional
         sidebar,
+        dcc.Store(id="profile-market",storage_type="memory"),
         # Área principal
         html.Main(
             [
@@ -644,6 +902,7 @@ app.layout = html.Div(
                                 ]
                             )
                         ),
+                        profile_questionnaire(),
                         # Metodologia
                         html.Section(
                             [
@@ -695,6 +954,14 @@ app.layout = html.Div(
                                        "Não são modelados custos de aluguel, spreads, impostos, transações ou chamadas de margem."),
                                 html.P("Exposição líquida de 100% a 300%, bruta de até 300%, com limite individual absoluto. "
                                        "Otimização de Sharpe com múltiplos pontos iniciais, sem garantia global em todos os casos."),
+                                html.H3("Perfil de risco e alocação estratégica"),
+                                html.P("A pontuação comportamental de 0 a 12 define A=12, 5 ou 2; há uma calibração alternativa por equivalente de certeza "
+                                       "de três loterias hipotéticas. A capacidade financeira e a experiência limitam a exposição separadamente. "
+                                       "Os limites são heurísticos e não constituem suitability validado."),
+                                html.P("A CAL usa y* = (retorno esperado da tangente - Selic)/(A × variância da tangente), com y entre 0 e o teto admissível. "
+                                       "A otimização direta maximiza U = retorno esperado − A/2 × variância, incluindo caixa residual, limite individual, "
+                                       "teto de exposição e limite opcional de volatilidade. O módulo não permite short nem alavancagem; "
+                                       "essas estratégias continuam disponíveis na análise exploratória. A Selic é proxy teórica, não ativo sem risco real."),
                                 html.H3("Fontes de dados"),
                                 html.P(
                                     "Yahoo Finance: preços "
@@ -795,7 +1062,7 @@ def analyze(tickers, start, end, freq, limit, points, allow_short=False, gross_l
 
 
 
-def render_results(tickers, start, end, freq, limit, points, allow_short=False, gross_limit=1., net_target=1.):
+def render_results(tickers, start, end, freq, limit, points, allow_short=False, gross_limit=1., net_target=1., include_snapshot=False):
     assets,prices,returns,mu,cov,rf,mvp,tan,frontier,selic = analyze(tickers,start,end,freq,limit,points,allow_short,gross_limit,net_target)
     mr,mv = portfolio_moments(mvp,mu,cov,rf)
     tr,tv = portfolio_moments(tan,mu,cov,rf)
@@ -946,7 +1213,7 @@ def render_results(tickers, start, end, freq, limit, points, allow_short=False, 
     csv=holdings.to_csv(index=False).encode("utf-8-sig")
     href="data:text/csv;base64,"+base64.b64encode(csv).decode("ascii")
     matrix=cov_df.rename_axis("Ativo").reset_index()
-    return html.Div([
+    result_view = html.Div([
         html.P(f"{len(assets)} ativos · {len(returns)} observações · fator de anualização {annualization_factor(freq)}",className="page-subtitle"),
         *warnings,
         html.Div([kpi_card("Retorno esperado",pct(tr),"Máximo Sharpe",tr>0),kpi_card("Volatilidade",pct(tv),"Anualizada"),kpi_card("Sharpe",f"{sharpe:.3f}" if np.isfinite(sharpe) else "—","Máximo Sharpe"),kpi_card("Taxa livre de risco",pct(rf),"Selic histórica anualizada")],className="kpi-grid"),
@@ -979,7 +1246,232 @@ def render_results(tickers, start, end, freq, limit, points, allow_short=False, 
     ])
 
 
-@app.callback(Output("results","children"),Input("run","n_clicks"),State("tickers","value"),State("period","start_date"),State("period","end_date"),State("frequency","value"),State("max-weight","value"),State("points","value"),State("allow-short","value"),State("gross-limit","value"),State("net-target","value"),prevent_initial_call=True)
+    if include_snapshot:
+        return result_view, market_snapshot(freq,assets,prices,returns,mu,cov,rf,mvp,tan,frontier,
+                                             selic,benchmark,limit,allow_short,net_target)
+    return result_view
+
+
+def market_snapshot(freq,assets,prices,returns,mu,cov,rf,mvp,tan,frontier,selic,benchmark,limit,allow_short,net_target):
+    """Browser-memory cache of market data only; no answers or identity."""
+    front=frontier[["Retorno","Volatilidade"]].to_dict("records")
+    return {"freq":freq,"assets":list(assets),"index":[x.isoformat() for x in returns.index],
+            "initial_date":prices.index[0].isoformat(),"returns":returns.to_numpy().tolist(),
+            "mu":mu.tolist(),"cov":cov.tolist(),"rf":float(rf),"mvp":mvp.tolist(),"tan":tan.tolist(),
+            "frontier":front,"selic":selic.reindex(returns.index).to_numpy().tolist(),
+            "benchmark":[None if pd.isna(x) else float(x) for x in benchmark.reindex(returns.index)] if benchmark is not None else None,
+            "limit":float(limit),"reference_ok":bool(not allow_short and abs(net_target-1)<1e-9)}
+
+
+def unpack_snapshot(data):
+    assets=list(data["assets"])
+    index=pd.to_datetime(data["index"])
+    returns=pd.DataFrame(data["returns"],index=index,columns=assets,dtype=float)
+    selic=pd.Series(data["selic"],index=index,dtype=float)
+    bench=pd.Series(data["benchmark"],index=index,dtype=float) if data["benchmark"] is not None else None
+    mu=np.asarray(data["mu"],float); cov=np.asarray(data["cov"],float); rf=float(data["rf"])
+    if len(returns)<20 or len(assets)<2 or not np.isfinite(returns.to_numpy()).all() or not np.isfinite(selic).all():
+        raise ValueError("Amostra de mercado inválida ou incompleta.")
+    if mu.shape!=(len(assets),) or cov.shape!=(len(assets),len(assets)) or not np.isfinite(cov).all() or not np.isfinite(mu).all() or not np.isfinite(rf):
+        raise ValueError("Estatísticas de mercado inválidas.")
+    if np.linalg.eigvalsh(cov).min() < -1e-8 or not np.allclose(cov,cov.T):
+        raise ValueError("Matriz de covariância inválida.")
+    return assets,returns,selic,bench,mu,cov,rf
+
+
+def profile_metrics(w,mu,cov,rf,returns,selic,benchmark,A):
+    moments=allocation_summary(w,mu,cov,rf,A)
+    rp=portfolio_return_series(returns,w,selic)
+    perf=wealth_metrics(rp)
+    out={"Retorno esperado anualizado":moments["expected_return"],
+         "Volatilidade anualizada (modelo)":moments["volatility"],
+         "Sharpe (modelo)":moments["sharpe"],
+         "Equivalente de certeza / utilidade":moments["utility"],
+         "Beta vs. BOVA11":beta_against_market(rp,benchmark) if benchmark is not None else np.nan}
+    out.update(var_metrics(rp))
+    out.update({key:perf[key] for key in ("Retorno acumulado","Maximum Drawdown","Maximum Run-up")})
+    out.update(exposure(w))
+    return out,perf,rp
+
+
+def profile_report(data,profile,method,max_volatility=None):
+    assets,returns,selic,benchmark,mu,cov,rf=unpack_snapshot(data)
+    cap=profile["cap"]; A=profile["A"]; limit=float(data["limit"])
+    freq=data["freq"]
+    # Retain the original risky reference only if the exploratory portfolio
+    # was itself long-only and unleveraged. Otherwise recompute on cached data.
+    if data["reference_ok"]:
+        mvp=np.asarray(data["mvp"],float); tan=np.asarray(data["tan"],float)
+        frontier=pd.DataFrame(data["frontier"])
+    else:
+        mvp,tan,frontier=optimize_portfolios(mu,cov,rf,points=45,limit=limit,
+                                           allow_short=False,gross_limit=1.,net_target=1.)
+    tr,tv=portfolio_moments(tan,mu,cov,rf)
+    if method not in ("cal","utility"):
+        raise ValueError("Método de alocação inválido.")
+    def choose(a):
+        if method=="cal":
+            return personalized_portfolio(tan,mu,cov,rf,a,cap,max_volatility)
+        return direct_profile_portfolio(mu,cov,rf,a,cap,limit,max_volatility)
+    selected=choose(A)
+    examples={name:choose(a) for name,a in PROFILE_A.items()}
+    selected_name="Carteira do perfil"
+    w=selected["weights"]
+    # Correctly distinguish a risky-only frontier, CAL, and the full constrained
+    # frontier. The CAL is not extended into leverage in this module.
+    fig=go.Figure()
+    fig.add_scatter(x=frontier.Volatilidade,y=frontier.Retorno,mode="lines+markers",
+                    name="Fronteira long-only (100% em risco)",line=dict(color="#94A3B8",width=2),marker=dict(size=3))
+    fig.add_scatter(x=[0,tv],y=[rf,tr],mode="lines",name="CAL de referência",
+                    line=dict(color=NAVY,dash="dash",width=2))
+    fig.add_scatter(x=[0],y=[rf],mode="markers",name="Selic",marker=dict(color=GRAY,size=10))
+    mr,mv=portfolio_moments(mvp,mu,cov,rf)
+    fig.add_scatter(x=[mv],y=[mr],mode="markers",name="MVP de referência",marker=dict(color="#497B98",symbol="diamond",size=10))
+    fig.add_scatter(x=[tv],y=[tr],mode="markers",name="Tangente de referência",marker=dict(color="#B78127",size=11,symbol="star"))
+    if method=="cal":
+        bound=selected["cal_ceiling"]
+        fig.add_scatter(x=[0,bound*tv],y=[rf,rf+bound*(tr-rf)],mode="lines",
+                        name="CAL factível no perfil",line=dict(color=GREEN,width=3))
+    else:
+        full=complete_frontier(mu,cov,rf,cap,limit,max_volatility,36)
+        fig.add_scatter(x=full.Volatilidade,y=full.Retorno,mode="lines+markers",
+                        name="Fronteira completa restrita",line=dict(color=GREEN,width=3),marker=dict(size=3))
+    # Group coincident points so hover/labels remain accessible.
+    groups={}
+    for name,p in examples.items():
+        key=(round(p["volatility"],7),round(p["expected_return"],7))
+        groups.setdefault(key,[]).append(name)
+    for (risk,ret),names in groups.items():
+        label=" / ".join(names)
+        fig.add_scatter(x=[risk],y=[ret],mode="markers",name=label,
+                        marker=dict(color=PROFILE_COLORS[names[0]],size=10,symbol="circle-open",line=dict(width=2)),
+                        text=[label],hovertemplate="%{text}<br>Volatilidade %{x:.2%}<br>Retorno %{y:.2%}<extra></extra>")
+    sx=selected["volatility"]; sy=selected["expected_return"]
+    fig.add_scatter(x=[sx],y=[sy],mode="markers",name="Perfil selecionado",
+                    marker=dict(size=17,symbol="star",color=GREEN,line=dict(color=WHITE,width=1.5)),
+                    hovertemplate="Carteira do perfil<br>Volatilidade %{x:.2%}<br>Retorno %{y:.2%}<extra></extra>")
+    # Iso-utility curve through the solution, on the feasible plotted risk range.
+    xs=np.linspace(0,max(tv,sx,float(frontier.Volatilidade.max()),.001)*1.05,120)
+    fig.add_scatter(x=xs,y=selected["utility"]+A/2*xs**2,mode="lines",name="Curva de indiferença",
+                    line=dict(color="#B78127",width=1.7,dash="dot"),visible="legendonly")
+    fig.update_layout(height=520,hovermode="closest",xaxis_title="Volatilidade anualizada",
+                      yaxis_title="Retorno esperado anualizado",xaxis_tickformat=".1%",yaxis_tickformat=".1%",
+                      legend=dict(orientation="h",y=-.22,yanchor="top",x=0,xanchor="left"))
+    # Readable full-weight chart for all hypothetical profiles, same capacity gates.
+    names=list(examples)+[selected_name]
+    allocations={**examples,selected_name:selected}
+    alloc_fig=go.Figure()
+    allocation_data=pd.DataFrame({"Ativo":[*assets,"Selic (caixa)"]})
+    for name,p in allocations.items():
+        allocation_data[name]=[*p["weights"],p["weight_rf"]]
+    for i,asset in enumerate(allocation_data.Ativo):
+        if max(abs(allocation_data.loc[i,n]) for n in names)<1e-8: continue
+        alloc_fig.add_bar(x=names,y=[allocation_data.loc[i,n] for n in names],name=asset,
+                          marker_color=NAVY if i==len(assets) else COLOR_PALETTE[(i+1)%len(COLOR_PALETTE)],
+                          hovertemplate="%{x}<br>"+asset+": %{y:.2%}<extra></extra>")
+    alloc_fig.update_layout(height=450,barmode="stack",yaxis_tickformat=".0%",yaxis_title="Peso no patrimônio",legend=dict(orientation="h",y=-.2,yanchor="top"))
+    profile_compare=[]
+    for name,p in allocations.items():
+        profile_compare.append({"Perfil":name,"A":f"{p['A']:.2f}","Exposição ao risco":pct(p["y"]),
+                                "Selic":pct(p["weight_rf"]),"Retorno":pct(p["expected_return"]),
+                                "Volatilidade":pct(p["volatility"]),
+                                "Sharpe":f"{p['sharpe']:.3f}" if np.isfinite(p["sharpe"]) else "—"})
+    # Reference portfolios and selected portfolio use same dates and same A.
+    strategies={"MVP (referência)":mvp,"Tangente (referência)":tan,selected_name:w}
+    perf_fig=go.Figure(); dd_fig=go.Figure(); ru_fig=go.Figure()
+    metrics={}; rc_frames={}
+    colors={"MVP (referência)":"#497B98","Tangente (referência)":"#B78127",selected_name:GREEN}
+    warnings=[]
+    initial=pd.Timestamp(data["initial_date"])
+    for name,weights in strategies.items():
+        metric,perf,rp=profile_metrics(weights,mu,cov,rf,returns,selic,benchmark,A)
+        metric["Volatilidade histórica anualizada"]=float(rp.std(ddof=1)*np.sqrt(annualization_factor(freq)))
+        metrics[name]=metric
+        rc_frames[name]=risk_contribution(weights,cov,assets)
+        perf_fig.add_scatter(x=[initial,*perf["wealth"].index],y=[100.,*(perf["wealth"]*100)],name=name,line=dict(color=colors[name],width=2))
+        dd_fig.add_scatter(x=[initial,*perf["drawdown"].index],y=[0.,*perf["drawdown"]],name=name,line=dict(color=colors[name],width=2))
+        ru_fig.add_scatter(x=[initial,*perf["runup"].index],y=[0.,*perf["runup"]],name=name,line=dict(color=colors[name],width=2))
+        if perf["Insolvência"]: warnings.append(dbc.Alert(name+": trajetória interrompida por insolvência.",color="danger"))
+    for bench_name,series,color in (("BOVA11",benchmark,GRAY),("Selic",selic,NAVY)):
+        if series is not None and series.notna().all():
+            p=wealth_metrics(series)
+            perf_fig.add_scatter(x=[initial,*p["wealth"].index],y=[100.,*(p["wealth"]*100)],name=bench_name,line=dict(color=color,dash="dash"))
+    if benchmark is None or benchmark.dropna().size<20:
+        warnings.append(dbc.Alert("BOVA11 indisponível ou insuficiente: beta não estimado.",color="warning"))
+    elif benchmark.isna().any():
+        warnings.append(dbc.Alert("BOVA11 possui lacunas: beta usa datas em comum, curva patrimonial omitida.",color="warning"))
+    if len(returns)<500:
+        warnings.append(dbc.Alert("VaR histórico de 99% pouco preciso: menos de 500 observações.",color="warning"))
+    if cap<=1e-10:
+        warnings.append(dbc.Alert("Uma restrição de capacidade impede exposição a ativos arriscados neste cenário. "
+                                  "O resultado ilustra 100% na proxy Selic; não equivale a uma recomendação de produto.",color="warning"))
+    if method=="cal" and selected["y_theoretical"]>selected["cal_ceiling"]+1e-8:
+        warnings.append(dbc.Alert(f"Alocação teórica de {pct(selected['y_theoretical'])} limitada a {pct(selected['cal_ceiling'])}. "
+                                  "Não há financiamento ou alavancagem no módulo de perfil.",color="info"))
+    if profile["ce_values"]:
+        warnings.append(dbc.Alert("A escolhido pela mediana dos cenários: "+", ".join(f"{a:.2f}" for a in profile["ce_values"])+
+                                  ". A categoria comportamental continua baseada nas quatro respostas de tolerância.",color="info"))
+    mg=pd.DataFrame(metrics).rename_axis("Indicador").reset_index()
+    raw_metrics=mg.copy()
+    for col in strategies:
+        mg[col]=["—" if not np.isfinite(v) else (f"{v:.3f}" if k in ("Beta vs. BOVA11","Sharpe (modelo)") else pct(v))
+                 for k,v in zip(mg.Indicador,mg[col])]
+    pcr=rc_frames[selected_name].copy()
+    pcr.insert(1,"Peso",w)
+    # Selic is modelled as deterministic here, not included in risky covariance.
+    cash_row=pd.DataFrame({"Ativo":["Selic (caixa)"],"Peso":[selected["weight_rf"]],
+                          "MCR":[np.nan],"CR":[0. if sx>1e-10 else np.nan],"PCR":[0. if sx>1e-10 else np.nan]})
+    pcr_display=pd.concat([pcr,cash_row],ignore_index=True)
+    pcr_fig=go.Figure()
+    for name,rc in rc_frames.items():
+        pcr_fig.add_bar(x=assets,y=rc.PCR,name=name,marker_color=colors[name])
+    pcr_fig.update_layout(height=420,barmode="group",yaxis_tickformat=".1%",yaxis_title="PCR (risco do modelo)")
+    if sx<=1e-10:
+        pcr_fig.add_annotation(text="PCR do perfil indefinido: variância de risco do modelo nula.",xref="paper",yref="paper",x=.5,y=1.07,showarrow=False)
+    perf_fig.update_layout(height=440,yaxis_title="Patrimônio (base 100)",hovermode="x unified")
+    dd_fig.update_layout(height=380,yaxis_title="Drawdown",yaxis_tickformat=".1%",hovermode="x unified")
+    ru_fig.update_layout(height=380,yaxis_title="Run-up",yaxis_tickformat=".1%",hovermode="x unified")
+    cap_table=pd.DataFrame([{"Critério":q,"Resposta":answer,"Teto ilustrativo":pct(lim),
+                            "Restritivo":"Sim" if abs(lim-cap)<1e-8 else "Não"} for q,answer,lim in profile["limits"]])
+    methodology="CAL: combinação da referência long-only e Selic." if method=="cal" else "Utilidade direta: pesos individuais, caixa residual, limite de exposição e teto opcional de volatilidade."
+    raw_metrics.insert(0,"Frequência",freq)
+    raw_metrics["Unidade"]=["razão" if k in ("Beta vs. BOVA11","Sharpe (modelo)") else "decimal (0.01 = 1%)" for k in raw_metrics.Indicador]
+    def csv_link(frame,name,label):
+        href="data:text/csv;base64,"+base64.b64encode(frame.to_csv(index=False).encode("utf-8-sig")).decode("ascii")
+        return html.A(label,href=href,download=name,className="secondary-button",style={"display":"inline-block","margin":"8px 10px 0 0"})
+    subtitle=f"{freq} · {len(returns)} observações · {initial:%d/%m/%Y} a {returns.index[-1]:%d/%m/%Y}"
+    return html.Div([
+        html.H3("Investor Risk Report",className="section-title",style={"marginTop":"20px"}),
+        html.P(subtitle+" · "+methodology,className="page-subtitle"),
+        *warnings,
+        html.Div([kpi_card("Perfil comportamental",profile["profile"],f"Pontuação {profile['score']}/12"),
+                  kpi_card("Aversão ao risco",f"{A:.2f}","Coeficiente A"),
+                  kpi_card("Teto de risco",pct(cap),"Capacidade + conhecimento (heurística)"),
+                  kpi_card("Conhecimento",f"{profile['knowledge_score']}/4","Questões objetivas")],className="kpi-grid"),
+        html.Div([kpi_card("Retorno esperado",pct(sy),"Anualizado",sy>0),
+                  kpi_card("Volatilidade",pct(sx),"Modelo anualizado"),
+                  kpi_card("Sharpe",f"{selected['sharpe']:.3f}" if np.isfinite(selected["sharpe"]) else "—","Modelo"),
+                  kpi_card("Utilidade",pct(selected["utility"]),"Equivalente de certeza")],className="kpi-grid"),
+        html.Div([panel("Fronteira eficiente, CAL e carteira do perfil",graph(fig),
+                        "Curva de indiferença disponível na legenda. Pontos coincidentes agrupados."),
+                  panel("Alocação estratégica por perfil",graph(alloc_fig),
+                        "Perfis de referência A=12, 5 e 2 sob as mesmas restrições de capacidade")],className="chart-grid"),
+        panel("Comparação dos perfis",table(pd.DataFrame(profile_compare))),
+        panel("Pesos por ativo — inclui Selic",table(allocation_data,{n:"{:.2%}" for n in names})),
+        panel("Estatísticas de risco e performance",html.Div([table(mg),csv_link(raw_metrics,f"perfil_risco_{freq.lower()}.csv","Baixar métricas (CSV)")]),
+              "MVP e tangente são referências arriscadas; podem superar o teto do perfil. VaR no horizonte de "+("1 mês" if freq=="Mensal" else "1 dia")),
+        panel("Evolução patrimonial",graph(perf_fig),"In-sample · pesos constantes rebalanceados a cada observação · base 100"),
+        html.Div([panel("Maximum Drawdown",graph(dd_fig)),panel("Maximum Run-up",graph(ru_fig))],className="equal-grid"),
+        panel("Contribuição percentual ao risco (PCR)",graph(pcr_fig),"Modelo de covariância dos ativos arriscados; Selic determinística."),
+        panel("Decomposição de risco da carteira do perfil",html.Div([table(pcr_display,{c:"{:.2%}" for c in ("Peso","MCR","CR","PCR")}),
+              csv_link(pcr_display,f"perfil_pcr_{freq.lower()}.csv","Baixar pesos e PCR (CSV)")])),
+        panel("Regras de capacidade aplicadas",table(cap_table),"O menor teto é utilizado. Esses limites não garantem que a perda máxima fique abaixo da tolerância declarada."),
+        html.P("Simulação acadêmica, não recomendação. A Selic é uma proxy teórica de caixa; taxas, impostos, liquidez e risco de produtos reais não são modelados. "
+               "Os parâmetros são estimados na mesma amostra; desempenho não é backtest. A classificação, os valores de A e os limites de capacidade são ilustrativos.",className="form-text")
+    ])
+
+
+@app.callback(Output("results","children"),Output("profile-market","data"),Input("run","n_clicks"),State("tickers","value"),State("period","start_date"),State("period","end_date"),State("frequency","value"),State("max-weight","value"),State("points","value"),State("allow-short","value"),State("gross-limit","value"),State("net-target","value"),prevent_initial_call=True)
 
 
 def run_optimization(n, tickers_text, start, end, frequency, max_weight, points, short_mode, gross_value, net_value):
@@ -1004,14 +1496,53 @@ def run_optimization(n, tickers_text, start, end, frequency, max_weight, points,
             raise ValueError("Limite por ativo incompatível com a exposição líquida.")
         freqs=["Mensal","Diária"] if frequency=="Ambas" else [frequency]
         tabs=[]
+        snapshots={}
         for freq in freqs:
             try:
-                children=render_results(tickers,start,end,freq,limit,points,allow_short,gross_limit,net_target)
+                children,snapshot=render_results(tickers,start,end,freq,limit,points,allow_short,gross_limit,net_target,include_snapshot=True)
+                snapshots[freq]=snapshot
             except Exception as exc:
                 children=dbc.Alert(f"Erro na análise {freq}: {exc}",color="danger")
             tabs.append(dcc.Tab(label=freq,children=children))
-        return html.Div([html.H2("Resultados da otimização",className="section-title"),dcc.Tabs(children=tabs)])
+        return html.Div([html.H2("Resultados da otimização",className="section-title"),dcc.Tabs(children=tabs)]), snapshots
     except Exception as exc:
-        return dbc.Alert(str(exc),color="danger")
+        return dbc.Alert(str(exc),color="danger"), {}
+
+
+# ---- Profile callbacks ----
+@app.callback(
+    Output("profile-frequency","options"),Output("profile-frequency","value"),Output("profile-frequency","disabled"),
+    Input("profile-market","data"),State("profile-frequency","value")
+)
+def available_profile_frequencies(data,current):
+    freqs=[f for f in ("Mensal","Diária") if f in (data or {})]
+    return ([{"label":f,"value":f} for f in freqs],
+            current if current in freqs else (freqs[0] if freqs else None),not bool(freqs))
+
+
+PROFILE_IDS=[q[0] for q in TOLERANCE_QUESTIONS+CAPACITY_QUESTIONS+KNOWLEDGE_QUESTIONS+CE_QUESTIONS]
+
+@app.callback(
+    Output("profile-result","children"),
+    Input("profile-run","n_clicks"),Input("profile-market","data"),Input("profile-frequency","value"),
+    Input("profile-model","value"),Input("profile-calibration","value"),Input("profile-volatility","value"),
+    *[Input(qid,"value") for qid in PROFILE_IDS],
+    prevent_initial_call=True
+)
+def run_profile(n,data,freq,method,calibration,volatility,*answers):
+    # Do not recalculate on every answer; invalidate previous report on input changes.
+    if ctx.triggered_id != "profile-run":
+        return dbc.Alert("Parâmetros ou respostas atualizados. Clique em Calcular carteira do perfil para gerar o novo relatório.",color="info")
+    if not data or freq not in data:
+        return dbc.Alert("Calcule primeiro as carteiras em Parâmetros e selecione uma frequência disponível.",color="warning")
+    try:
+        if volatility not in (0,5,10,15,20,25,30,40):
+            raise ValueError("Teto de volatilidade inválido.")
+        profile=evaluate_profile(answers[:4],answers[4:10],answers[10:15],calibration,answers[15:18])
+        return profile_report(data[freq],profile,method,volatility/100 if volatility else None)
+    except Exception as exc:
+        return dbc.Alert("Análise de perfil: "+str(exc),color="warning")
+
+
 if __name__ == "__main__":
     app.run(debug=False,host="0.0.0.0",port=int(os.environ.get("PORT",8050)))
